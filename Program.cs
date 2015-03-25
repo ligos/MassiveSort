@@ -182,13 +182,10 @@ namespace MurrayGrant.MassiveSort
                 {
                     Console.Write("Sorting chunk {0:N0} with {3:N0} files ({1} - {2})...", chunkNum, ch.First().Name, ch.Last().Name, ch.Count);
                     var lines = ch.SelectMany(f => f.YieldLinesAsByteArray((int)Math.Min(f.Length, conf.ReadBufferSize))).ToList();
-                    var partitionedLines = System.Collections.Concurrent.Partitioner.Create(lines, true);
+                    lines.Sort(ByteArrayComparer.Value);
 
-                    foreach (var l in partitionedLines
-                                        .AsParallel().WithDegreeOfParallelism(conf.DegreeOfParallelism)
-                                        .OrderBy(l => l, ByteArrayComparer.Value)
+                    foreach (var l in lines
                                         // PERF: this Distinct() represents a stage 3 in time to process.
-                                        //       it is processed on a single thread as well.
                                         .DistinctWhenSorted(ByteArrayComparer.Value))
                     {
                         output.Write(l, 0, l.Length);
