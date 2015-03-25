@@ -13,9 +13,15 @@ namespace MurrayGrant.MassiveSort
         const byte newlineByte = (byte)'\n';
         const double oneMbAsDouble = 1024.0 * 1024.0;
 
-        static void Main(string[] args)
+        public static int Main(string[] args)
         {
             var conf = new Conf();
+            if (!CommandLine.Parser.Default.ParseArguments(args, conf) 
+                || !conf.IsValid)
+            {
+                PrintUsage();
+                return 1;
+            }
 
             var sw = Stopwatch.StartNew();
 
@@ -26,20 +32,31 @@ namespace MurrayGrant.MassiveSort
                 Directory.Delete(conf.TempFolder, true);
             Directory.CreateDirectory(conf.TempFolder);
 
-            
-            // Snapshot the file's we'll be working with.
-            var filesToProcess = conf.RootDir.EnumerateFiles("*", SearchOption.AllDirectories).ToList();
+
+            try
+            {
+                // Snapshot the file's we'll be working with.
+                var root = new DirectoryInfo(conf.InputRoot);
+                var filesToProcess = root.EnumerateFiles("*", SearchOption.AllDirectories).OrderBy(x => x.FullName, StringComparer.CurrentCultureIgnoreCase).ToList();
 
 
-            // Stage 1: split / shard files into smaller chunks.
-            var toSort = SplitFiles(filesToProcess, conf);
+                // Stage 1: split / shard files into smaller chunks.
+                var toSort = SplitFiles(filesToProcess, conf);
 
 
-            // Stage 2: sort and merge the files.
-            SortFiles(toSort, conf);
-            sw.Stop();
+                // Stage 2: sort and merge the files.
+                SortFiles(toSort, conf);
+                sw.Stop();
+            }
+            finally
+            {
+                // Try to clean up our temp folder at the end.
+                if (Directory.Exists(conf.TempFolder))
+                    Directory.Delete(conf.TempFolder, true);
+            }
 
             Console.WriteLine("Total time: {0}", sw.Elapsed);
+            return 0;
         }
 
         private static IEnumerable<FileInfo> SplitFiles(IEnumerable<FileInfo> files, Conf conf)
@@ -134,11 +151,12 @@ namespace MurrayGrant.MassiveSort
 
         private static void SortFiles(IEnumerable<FileInfo> toSort, Conf conf)
         {
-            if (conf.OutputFile.Exists) 
-                conf.OutputFile.Delete();
+            if (File.Exists(conf.OutputFile))
+                File.Delete(conf.OutputFile);
+
             long totalLinesWritten = 0;
             var sortSw = Stopwatch.StartNew();
-            using (var output = new FileStream(conf.OutputFile.FullName, FileMode.Create, FileAccess.Write, FileShare.None, conf.FinalOutputBufferSize))
+            using (var output = new FileStream(conf.OutputFile, FileMode.Create, FileAccess.Write, FileShare.None, conf.FinalOutputBufferSize))
             {
                 // Split into large chunks to sort.
                 var cumulativeSize = 0L;
@@ -162,7 +180,7 @@ namespace MurrayGrant.MassiveSort
                 int chunkNum = 1;
                 foreach (var ch in sortChunks)
                 {
-                    Console.Write("Sorting chunk {0:N0} ({1} - {2})...", chunkNum, ch.First().Name, ch.Last().Name);
+                    Console.Write("Sorting chunk {0:N0} with {3:N0} files ({1} - {2})...", chunkNum, ch.First().Name, ch.Last().Name, ch.Count);
                     var lines = ch.SelectMany(f => f.YieldLinesAsByteArray((int)Math.Min(f.Length, conf.ReadBufferSize))).ToList();
                     var partitionedLines = System.Collections.Concurrent.Partitioner.Create(lines, true);
 
@@ -185,6 +203,12 @@ namespace MurrayGrant.MassiveSort
             }
             sortSw.Stop();
             Console.WriteLine("Sorted {0:N0} lines in time {1:N1}ms", totalLinesWritten, sortSw.Elapsed.TotalMilliseconds);
+        }
+
+
+        private static void PrintUsage()
+        {
+            Console.WriteLine("Usage....");
         }
     }
 }
