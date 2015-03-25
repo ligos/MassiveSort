@@ -146,5 +146,19 @@ namespace MurrayGrant.MassiveSort
                 first = false;
             }
         }
+        public static IEnumerable<T> DistinctWhenSorted<T>(this IEnumerable<T> collection, IEqualityComparer<T> comparer)
+        {
+            T previousItem = default(T);
+            bool first = true;
+            foreach (var item in collection)
+            {
+                if (!first && !comparer.Equals(previousItem, item))
+                {
+                    yield return item;
+                }
+                previousItem = item;
+                first = false;
+            }
+        }
     }
 }
