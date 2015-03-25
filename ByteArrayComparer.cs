@@ -44,12 +44,30 @@ namespace MurrayGrant.MassiveSort
 
         public int Compare(byte[] first, byte[] second)
         {
+            // See also http://stackoverflow.com/questions/3000803/how-to-call-memcmp-on-two-parts-of-byte-with-offset
+
             //		if (first == null)
             //			return 1;
             //		if (second == null)
             //			return -1;
 
-            return memcmp(first, second, first.Length);
+            if (first.Length == second.Length)
+                // Same length: just return memcmp() result.
+                return memcmp(first, second, first.Length);
+            else 
+            {
+                // Different length is more of a pain.
+                // Make sure we only compare common length parts.
+                var shortestLen = Math.Min(first.Length, second.Length);
+                var cmp = memcmp(first, second, shortestLen);
+                if (cmp != 0)
+                    // The common length differs: just return memcmp() result;
+                    return cmp;
+                else 
+                    // Common length is identical: longer comes after shorter.
+                    // Note the subtraction can break if our difference is Int32.MaxValue or Int32.MinValue - I'm assuming that's not the case.
+                    return first.Length - second.Length;
+            }
         }
 
         [System.Runtime.InteropServices.DllImport("msvcrt.dll", CallingConvention = System.Runtime.InteropServices.CallingConvention.Cdecl)]
