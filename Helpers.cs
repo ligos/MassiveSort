@@ -39,15 +39,11 @@ namespace MurrayGrant.MassiveSort
                 bool lastByteWasNewLine = false;
                 while ((b = stream.ReadByte()) != -1)
                 {
-                    if (i == buf.Length - 1)
-                        // TODO: handle a skipped line.
-                        continue;
-
                     if (lastByteWasNewLine && (b == 0x0a || b == 0x0d))
                         continue;
 
                     // Look for an end of line or null byte.
-                    if (!(b == 0x0a || b == 0x0d))
+                    if (i < buf.Length && !(b == 0x0a || b == 0x0d))
                     {
                         // Not found: keep looking.
                         buf[i] = (byte)b;
