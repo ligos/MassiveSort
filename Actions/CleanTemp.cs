@@ -1,0 +1,82 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+using System.IO;
+using System.Diagnostics;
+using CommandLine;
+
+namespace MurrayGrant.MassiveSort.Actions
+{
+    public sealed class CleanTempConf : CommonConf
+    {
+        [Option('t', "temp-folder")]
+        public string TempFolder { get; set; }
+    }
+
+    public class CleanTemp : ICmdVerb
+    {
+        private readonly CleanTempConf _Conf;
+        private const double oneMbAsDouble = 1024.0 * 1024.0;
+
+        public CleanTemp(CleanTempConf conf)
+        {
+            _Conf = conf;
+        }
+
+        public bool IsValid()
+        {
+            return true;
+        }
+        public string GetValidationError()
+        {
+            return "";
+        }
+
+        public void Do()
+        {
+            // Check the default temp folder.
+            var defaultTempSize = 0L;
+            var defaultTemp = Helpers.GetBaseTempFolder();
+            Console.Write("Cleaning default temp folder '{0}'...", defaultTemp);
+
+            if (Directory.Exists(defaultTemp))
+            {
+                var dir = new DirectoryInfo(defaultTemp);
+                defaultTempSize = dir.EnumerateFiles("*", SearchOption.AllDirectories).Sum(x => x.Length);
+                foreach (var x in dir.EnumerateFiles())
+                    x.Delete();
+                foreach (var x in dir.EnumerateDirectories())
+                    x.Delete(true);
+                Console.WriteLine(" Deleted {0:N1}MB.", defaultTempSize / oneMbAsDouble);
+            }
+            else
+            {
+                Console.WriteLine(" Does not exist.");
+            }
+
+
+            // If one was provided via the command line, check it as well.
+            if (String.IsNullOrEmpty(_Conf.TempFolder))
+            {
+                var customTempSize = 0L;
+                var customTemp = Helpers.GetBaseTempFolder();
+                Console.Write("Cleaning custom temp folder '{0}'...", customTemp);
+
+                if (Directory.Exists(customTemp))
+                {
+                    var dir = new DirectoryInfo(customTemp);
+                    customTempSize = dir.EnumerateFiles("*", SearchOption.AllDirectories).Sum(x => x.Length);
+                    foreach (var x in dir.EnumerateFileSystemInfos())
+                        x.Delete();
+                    Console.WriteLine(" Deleted {0:N1}MB.", customTempSize / oneMbAsDouble);
+                }
+                else
+                {
+                    Console.WriteLine(" Does not exist.");
+                }
+            }
+        }
+    }
+}

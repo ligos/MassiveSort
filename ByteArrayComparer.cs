@@ -22,7 +22,7 @@ namespace MurrayGrant.MassiveSort
                 return false;
 
             // http://stackoverflow.com/a/1445405
-            return memcmp(first, second, first.Length) == 0;
+            return memcmp(first, second, new UIntPtr((uint)first.Length)) == 0;
         }
 
         public int GetHashCode(byte[] bytes)
@@ -53,13 +53,13 @@ namespace MurrayGrant.MassiveSort
 
             if (first.Length == second.Length)
                 // Same length: just return memcmp() result.
-                return memcmp(first, second, first.Length);
+                return memcmp(first, second, new UIntPtr((uint)first.Length));
             else 
             {
                 // Different length is more of a pain.
                 // Make sure we only compare common length parts.
                 var shortestLen = Math.Min(first.Length, second.Length);
-                var cmp = memcmp(first, second, shortestLen);
+                var cmp = memcmp(first, second, new UIntPtr((uint)shortestLen));
                 if (cmp != 0)
                     // The common length differs: just return memcmp() result;
                     return cmp;
@@ -72,6 +72,6 @@ namespace MurrayGrant.MassiveSort
 
         [System.Runtime.InteropServices.DllImport("msvcrt.dll", CallingConvention = System.Runtime.InteropServices.CallingConvention.Cdecl)]
         [System.Security.SuppressUnmanagedCodeSecurity]
-        static extern int memcmp(byte[] b1, byte[] b2, long count);
+        static extern int memcmp(byte[] b1, byte[] b2, UIntPtr count);
     }
 }

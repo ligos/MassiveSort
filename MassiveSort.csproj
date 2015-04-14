@@ -36,6 +36,9 @@
     <Reference Include="CommandLine">
       <HintPath>packages\CommandLineParser.1.9.71\lib\net45\CommandLine.dll</HintPath>
     </Reference>
+    <Reference Include="Humanizer">
+      <HintPath>packages\Humanizer.1.35.0\lib\portable-win+net40+sl50+wp8+wpa81+MonoAndroid10+MonoTouch10+Xamarin.iOS10\Humanizer.dll</HintPath>
+    </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />
     <Reference Include="Microsoft.CSharp" />
@@ -45,6 +48,9 @@
     <Compile Include="ByteArrayComparer.cs" />
     <Compile Include="Conf.cs" />
     <Compile Include="Helpers.cs" />
+    <Compile Include="Actions\CleanTemp.cs" />
+    <Compile Include="Actions\MergeMany.cs" />
+    <Compile Include="OffsetAndLength.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>

@@ -30,11 +30,16 @@ namespace MurrayGrant.MassiveSort
             }
         }
 
-        public static IEnumerable<byte[]> YieldLinesAsByteArray(this FileInfo fi, int bufferSize)
+        public static string GetBaseTempFolder()
         {
-            using (var stream = new FileStream(fi.FullName, FileMode.Open, FileAccess.Read, FileShare.Read, bufferSize))
+            return Path.Combine(Environment.GetEnvironmentVariable("TEMP"), "MassiveSort");
+        }
+
+        public static IEnumerable<byte[]> YieldLinesAsByteArray(this FileInfo fi, int streamBufferSize, int lineBufferSize)
+        {
+            using (var stream = new FileStream(fi.FullName, FileMode.Open, FileAccess.Read, FileShare.Read, streamBufferSize))
             {
-                var buf = new byte[4096];		// Max line length in bytes.
+                var buf = new byte[lineBufferSize];		// Max line length in bytes.
                 int b = 0, i = 0;
                 bool lastByteWasNewLine = false;
                 while ((b = stream.ReadByte()) != -1)
