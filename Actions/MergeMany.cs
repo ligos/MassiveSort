@@ -20,7 +20,7 @@ namespace MurrayGrant.MassiveSort.Actions
             this.TempFolder = Path.Combine(Helpers.GetBaseTempFolder(), pid.ToString());        // Temp folder is specific to process id, so we can run in parallel.
 
             this.MaxSortSize = 64 * 1024 * 1024;            // Largest size of files to sort in one chunk.
-            this.ReadBufferSize = 256 * 1024;               // Buffer size to use when reading files.
+            this.ReadBufferSize = 64 * 1024;                // Buffer size to use when reading files.
             this.LineBufferSize = 64 * 1024;                // Buffer size to use when reading lines (also max line length).
             this.TempFileBufferSize = 128 * 1024;           // Buffer size to use when writing temp files.
             this.OutputBufferSize = 256 * 1024;             // Buffer size to use for the final merged output file.
