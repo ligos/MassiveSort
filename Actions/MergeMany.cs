@@ -197,9 +197,6 @@ namespace MurrayGrant.MassiveSort.Actions
         }
         private IEnumerable<FileInfo> SplitFiles(IEnumerable<FileInfo> files)
         {
-            var splitSw = new Stopwatch();
-            var splitFlushSw = new Stopwatch();
-            long totalLines = 0L, totalLinesProcessed = 0L;
             var totalLength = files.Sum(fi => fi.Length);
             if (totalLength <= _Conf.MaxSortSize)
             {
@@ -210,57 +207,116 @@ namespace MurrayGrant.MassiveSort.Actions
 
             // Stage 1: read all files and split lines into buckets.
             // This only happens if we have too many files.
-            int shardSize = 1;
-            long shardThreshold = Int64.MaxValue;
-            splitSw.Start();
-            var thisRoundOfSplitting = files.AsEnumerable();
-            do
+            var splitSw = new Stopwatch();
+            var flushSw = new Stopwatch();
+
+            Console.WriteLine("Splitting {0:N0} file(s) (round 1)...", files.Count());
+            long totalLinesProcessed = this.DoTopLevelSplit(files, splitSw, flushSw);
+            long totalLines = totalLinesProcessed;
+            
+            
+            // Test to see if we need further levels of sharding to make files small enough to sort.
+            int shardSize = 2;
+            var filesLargerThanSortSize = new DirectoryInfo(_Conf.TempFolder).EnumerateFiles("*", SearchOption.AllDirectories).Where(f => f.Length > _Conf.MaxSortSize);
+            while (filesLargerThanSortSize.Any())
             {
-                Console.WriteLine("Splitting files (round {0})...", shardSize);
-                // Pre-create shard files.
-                var shardFiles = CreateShardFiles("");     // TODO: the empty string needs to support shards greater than 1.
+                Console.WriteLine("Splitting {0:N0} file(s) (round {0})...", shardSize, filesLargerThanSortSize.Count());
+
+                this.DoSubLevelSplit(filesLargerThanSortSize, shardSize, splitSw, flushSw);
+
+                shardSize++;
+                filesLargerThanSortSize = new DirectoryInfo(_Conf.TempFolder).EnumerateFiles("*", SearchOption.AllDirectories).Where(f => f.Length > _Conf.MaxSortSize);
+            }
+            
+
+            // Display summary information.
+            var totalTimeSeconds = splitSw.Elapsed.TotalSeconds + flushSw.Elapsed.TotalSeconds;
+            var totalMB = files.Sum(x => x.Length) / oneMbAsDouble;
+            Console.WriteLine("Split {0:N0} file(s) with {1:N0} lines ({2:N2} MB) in {3:N1} sec, {4:N0} lines / sec, {5:N1} MB / sec.", files.Count(), totalLines, totalMB, totalTimeSeconds, totalLines / totalTimeSeconds, totalMB / totalTimeSeconds);
+            
+            var toSort = new DirectoryInfo(_Conf.TempFolder).EnumerateFiles("*", SearchOption.AllDirectories).OrderBy(f => f.Name).ToList();
+            return toSort;
+        }
+        private long DoTopLevelSplit(IEnumerable<FileInfo> files, Stopwatch splitSw, Stopwatch flushSw)
+        {
+            long linesProcessed = 0L;
+
+            splitSw.Start();
+            
+            var shardFiles = CreateShardFiles("");
+            try
+            {
+                foreach (var f in files)
+                {
+                    var lines = SplitFile(shardFiles, f, 1);
+                    linesProcessed += lines;
+                }
+            }
+            finally
+            {
+                splitSw.Stop();
+                this.FlushFiles(shardFiles, null, flushSw);
+            }
+
+            return linesProcessed;
+        }
+        private long DoSubLevelSplit(IEnumerable<FileInfo> files, int shardSize, Stopwatch splitSw, Stopwatch flushSw)
+        {
+            // The logic for sub level splits is slightly different.
+            // As we only process a single file at a time, and it is replaced in the end.
+            long linesProcessed = 0L;
+
+            foreach (var f in files)
+            {
+                splitSw.Start();
+                var shardFiles = CreateShardFiles(Path.GetFileNameWithoutExtension(f.Name));
+                
                 try
                 {
-                    foreach (var f in files)
-                    {
-                        var lines = SplitFile(shardFiles, f, shardSize);
-                        totalLinesProcessed += lines;
-                        if (shardSize == 1)
-                            totalLines += lines;
-                    }
+                    var lines = SplitFile(shardFiles, f, shardSize);
+                    linesProcessed += lines;
                 }
                 finally
                 {
-                    // Close and flush the shard files created.
                     splitSw.Stop();
-
-                    Console.Write("Flushing data to temp files...");
-                    splitFlushSw.Start();
-                    var toDelete = shardFiles.Where(x => x.Length == 0L).Select(x => x.Name).ToList();
-                    Parallel.ForEach(shardFiles, fs => {
-                        fs.Flush();
-                        fs.Close();
-                    });
-                    // Delete any zero length files.
-                    foreach (var f in toDelete)
-                        File.Delete(f);
-                    splitFlushSw.Stop();
-                    Console.WriteLine(" Done in {0:N1}ms.", splitFlushSw.Elapsed.TotalMilliseconds);
-
-                    splitSw.Start();
+                    this.FlushFiles(shardFiles, f.FullName, flushSw);
                 }
-                shardSize++;
-                shardThreshold = _Conf.MaxSortSize;
-                thisRoundOfSplitting = new DirectoryInfo(_Conf.TempFolder).EnumerateFiles("*", SearchOption.AllDirectories).Where(f => f.Length > _Conf.MaxSortSize);
-            } while (thisRoundOfSplitting.Any());
-            splitSw.Stop();
+            }
 
-            var totalTimeSeconds = splitSw.Elapsed.TotalSeconds + splitFlushSw.Elapsed.TotalSeconds;
-            var totalMB = files.Sum(x => x.Length) / oneMbAsDouble;
-            Console.WriteLine("Split {0:N0} file(s) with {1:N0} lines ({2:N2} MB) in {3:N1} sec, {4:N0} lines / sec, {5:N1} MB / sec.", files.Count(), totalLines, totalMB, totalTimeSeconds, totalLines / totalTimeSeconds, totalMB / totalTimeSeconds);
-            return new DirectoryInfo(_Conf.TempFolder).EnumerateFiles("*", SearchOption.AllDirectories).OrderBy(f => f.Name).ToList();
+            return linesProcessed;
         }
+        private void FlushFiles(FileStream[] shardFiles, string moveLastShardToPath, Stopwatch flushSw)
+        {
+            // Close and flush the shard files created.
+            Console.Write("Flushing data to temp files...");
+            var flushStarted = flushSw.Elapsed;
+            flushSw.Start();
 
+            var emptyShardPath = shardFiles.Last().Name;
+            var toDelete = shardFiles.Where(x => x.Length == 0L).Select(x => x.Name).ToList();
+            Parallel.ForEach(shardFiles, fs =>
+            {
+                fs.Flush();
+                fs.Close();
+            });
+            
+            // Delete any zero length files.
+            Parallel.ForEach(toDelete, f => { File.Delete(f); });
+            
+            // Replace the file we were just processing with the 'empty' shard.
+            // This only happens on sub level splits.
+            if (!String.IsNullOrEmpty(moveLastShardToPath))
+            {
+                File.Delete(moveLastShardToPath);
+                File.Move(emptyShardPath, moveLastShardToPath);
+            }
+            
+            flushSw.Stop();
+            var flushEnded = flushSw.Elapsed;
+            var flushDuration = flushEnded.Subtract(flushStarted);
+            Console.WriteLine(" Done in {0:N1}ms.", flushDuration.TotalMilliseconds);
+            
+        }
 
         private FileStream[] CreateShardFiles(string initialShard)
         {
