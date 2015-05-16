@@ -68,7 +68,7 @@
 using System;
 using System.Diagnostics;
 
-namespace TimSort
+namespace MurrayGrant.MassiveSort.Sorters.TimSort
 {
     #region class TimSortBase<TList, TItem>
 

@@ -77,7 +77,7 @@ using System.Diagnostics;
 
 namespace System.Linq
 {
-    using TimSort;
+    using MurrayGrant.MassiveSort.Sorters.TimSort;
 
     #region partial class TimSortExtender
 
@@ -735,7 +735,7 @@ namespace System.Linq
     #endregion
 }
 
-namespace TimSort
+namespace MurrayGrant.MassiveSort.Sorters.TimSort
 {
 
     #region class ByteArrayTimSort

@@ -9,7 +9,7 @@ Description: TimSort extension methods.
 
 using System.Collections.Generic;
 using System.Reflection;
-using TimSort;
+using MurrayGrant.MassiveSort.Sorters.TimSort;
 
 // ReSharper disable CheckNamespace
 
