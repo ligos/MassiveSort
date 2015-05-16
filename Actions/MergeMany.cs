@@ -26,9 +26,11 @@ namespace MurrayGrant.MassiveSort.Actions
             this.OutputBufferSize = 256 * 1024;             // Buffer size to use for the final merged output file.
 
             this.ForceSplit = false;
+            this.LeaveDuplicates = false;
             this.DegreeOfParallelism = Environment.ProcessorCount;      // TODO: default to the number of physical rather than logical cores.
 
-            this.SortAlgorithm = SortAlgorithms.Auto;       // Sort algorithm to use. 
+            this.SortAlgorithm = SortAlgorithms.TimSort;    // Sort algorithm to use. 
+            this.Comparer = Comparers.OptimisedClr;         // IComparer implementation to use.
         }
 
         [OptionArray('i', "input")]
@@ -63,12 +65,18 @@ namespace MurrayGrant.MassiveSort.Actions
         [Option("force-split")]
         public bool ForceSplit { get; set; }
 
+        /// <summary>
+        /// If true, duplicates are not removed. Defaults to false.
+        /// </summary>
+        [Option("leave-duplicates")]
+        public bool LeaveDuplicates { get; set; }
+
+
         [Option('w', "workers")]
         public int DegreeOfParallelism { get; set; }
 
         [Option("sort-algorithm")]
         public SortAlgorithms SortAlgorithm { get; set; }
-
         public enum SortAlgorithms
         {
             /// <summary>
@@ -78,14 +86,40 @@ namespace MurrayGrant.MassiveSort.Actions
             
             /// <summary>
             /// Sorts using standard .NET Array.Sort() method.
-            /// This is a quick sort in 4.5 and lower, and a hybrid sort (quick, merge, insert) in 4.5.1+.
+            /// This is a quick sort in versions earlier than 4.5, and a hybrid sort (quick, heap, insertion) in 4.5 and newer.
             /// </summary>
             DefaultArray,
+
+            /// <summary>
+            /// Sorts using the Linq To Objects Enumerable.OrderBy() method.
+            /// </summary>
+            LinqOrderBy,
 
             /// <summary>
             /// Sorts using Tim Sort - https://en.wikipedia.org/wiki/Timsort
             /// </summary>
             TimSort,
+        }
+
+        [Option("comparer")]
+        public Comparers Comparer { get; set; }
+        public enum Comparers
+        {
+            /// <summary>
+            /// A conservative, entirely .NET comparer.
+            /// </summary>
+            ConservativeClr,
+
+            /// <summary>
+            /// An optimised, entirely .NET comparer.
+            /// </summary>
+            OptimisedClr,
+
+            /// <summary>
+            /// A more optimised comparer which uses native P/Invoke to memcmp()
+            /// </summary>
+            Native,
+
         }
 
         public MergeConf ExtraParsing()
@@ -549,6 +583,7 @@ namespace MurrayGrant.MassiveSort.Actions
                 File.Delete(_Conf.OutputFile);
 
             long totalLinesWritten = 0;
+            long totalLinesRead = 0;
 
             // Split into large chunks to sort.
             var cumulativeSize = 0L;
@@ -577,18 +612,23 @@ namespace MurrayGrant.MassiveSort.Actions
                 {
                     Console.Write("Sorting chunk {0:N0} with {3:N0} files ({1} - {2}: {4:N1}MB)...", chunkNum, ch.First().Name, ch.Last().Name, ch.Count, ch.Sum(x => x.Length) / oneMbAsDouble);
                     var chSw = Stopwatch.StartNew();
-                    
+
+                    var comparer = this.GetComparer();
+
                     // Read the files for the chunk into a single array for sorting.
                     var readSw = Stopwatch.StartNew();
                     var lines = ch.SelectMany(f => f.YieldLinesAsByteArray((int)Math.Min(f.Length, _Conf.ReadBufferSize), _Conf.LineBufferSize)).ToArray();
+                    totalLinesRead += lines.Length;
                     readSw.Stop();
 
                     // Actually sort them!
                     var sortSw = Stopwatch.StartNew();
                     if (_Conf.SortAlgorithm == MergeConf.SortAlgorithms.Auto || _Conf.SortAlgorithm == MergeConf.SortAlgorithms.DefaultArray)
-                        Array.Sort(lines, ByteArrayComparer.Value);
+                        Array.Sort(lines, comparer);
+                    else if (_Conf.SortAlgorithm == MergeConf.SortAlgorithms.LinqOrderBy)
+                        lines = lines.OrderBy(x => x, comparer).ToArray();
                     else if (_Conf.SortAlgorithm == MergeConf.SortAlgorithms.TimSort)
-                        lines.TimSort(ByteArrayComparer.Value.Compare);
+                        lines.TimSort(comparer.Compare);
                     else
                         throw new Exception("Unknown sort algorithm: " + _Conf.SortAlgorithm);
                     sortSw.Stop();
@@ -596,9 +636,11 @@ namespace MurrayGrant.MassiveSort.Actions
                     // Remove duplicates and write to disk.
                     var dedupAndWriteSw = Stopwatch.StartNew();
                     long linesWritten = 0;
-                    foreach (var l in lines
-                        // PERF: this Distinct() represents a stage 3 in time to process.
-                                        .DistinctWhenSorted(ByteArrayComparer.Value))
+                    var equalityComparer = this.GetEqualityComparer();
+                    var linesToWrite = lines as IEnumerable<byte[]>;
+                    if (!_Conf.LeaveDuplicates)
+                        linesToWrite = linesToWrite.DistinctWhenSorted(equalityComparer.Equals);
+                    foreach (var l in linesToWrite)
                     {
                         output.Write(l, 0, l.Length);
                         output.WriteByte(newlineByte);
@@ -607,7 +649,8 @@ namespace MurrayGrant.MassiveSort.Actions
                     dedupAndWriteSw.Stop();
                     chSw.Stop();
                     Console.WriteLine(" Done (in {0:N1}ms).", chSw.Elapsed.TotalMilliseconds);
-                    Console.WriteLine("   Read {0:N0} lines in {1:N1}ms, sorted in {2:N1}ms, wrote {3:N0} lines in {4:N1}ms, {5:N0} duplicates removed.", lines.Length, readSw.Elapsed.TotalMilliseconds, sortSw.Elapsed.TotalMilliseconds, linesWritten, dedupAndWriteSw.Elapsed.TotalMilliseconds, lines.Length - linesWritten);
+                    if (_Conf.Debug)
+                        Console.WriteLine("   Read {0:N0} lines in {1:N1}ms, sorted in {2:N1}ms, wrote {3:N0} lines in {4:N1}ms, {5:N0} duplicates removed.", lines.Length, readSw.Elapsed.TotalMilliseconds, sortSw.Elapsed.TotalMilliseconds, linesWritten, dedupAndWriteSw.Elapsed.TotalMilliseconds, lines.Length - linesWritten);
 
                     totalLinesWritten += linesWritten;
                     chunkNum++;
@@ -615,7 +658,27 @@ namespace MurrayGrant.MassiveSort.Actions
                 output.Flush();
             }
             allSw.Stop();
-            Console.WriteLine("Sorted and removed duplicates, {0:N0} lines remain ({1:N1} sec)", totalLinesWritten, allSw.Elapsed.TotalSeconds);
+            Console.WriteLine("Sorted{2}: {0:N0} lines remain, {3:N0} duplicates removed ({1:N1} sec)", totalLinesWritten, allSw.Elapsed.TotalSeconds, _Conf.LeaveDuplicates ? "" : " and removed duplicates", totalLinesRead - totalLinesWritten);
+        }
+
+        private IComparer<byte[]> GetComparer()
+        {
+            switch (_Conf.Comparer)
+            {
+                case MergeConf.Comparers.ConservativeClr:
+                    return Comparers.ConservativeClrByteArrayComparer.Value;
+                case MergeConf.Comparers.OptimisedClr:
+                    return Comparers.OptimisedClrByteArrayComparer.Value;
+                case MergeConf.Comparers.Native:
+                    return Comparers.PInvokeByteArrayComparer.Value;
+                default:
+                    throw new Exception("Unknown comparer: " + _Conf.Comparer);
+            }
+        }
+        private IEqualityComparer<byte[]> GetEqualityComparer()
+        {
+            var result = (IEqualityComparer<byte[]>)GetComparer();
+            return result;
         }
         #endregion
 
@@ -632,6 +695,8 @@ namespace MurrayGrant.MassiveSort.Actions
                 Console.WriteLine("  Output File Buffer Size: " + _Conf.OutputBufferSize.Bytes().ToString());
                 Console.WriteLine("  Temp Folder: " + _Conf.TempFolder);
                 Console.WriteLine("  Sort Algorithm: " + _Conf.SortAlgorithm);
+                Console.WriteLine("  Comparer: " + _Conf.Comparer);
+                Console.WriteLine("  Leave Duplicates: " + _Conf.LeaveDuplicates);
             }
         }
 
