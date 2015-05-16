@@ -26,6 +26,13 @@ namespace MurrayGrant.MassiveSort
         public MurrayGrant.MassiveSort.Actions.MergeConf MergeOptions { get; set; }
         [VerbOption("cleantemp")]
         public MurrayGrant.MassiveSort.Actions.CleanTempConf CleanTempOptions { get; set; }
+
+
+        [HelpVerbOption()]
+        public string GetUsage(string verb)
+        {
+            return CommandLine.Text.HelpText.AutoBuild(this, verb);
+        }
     }
 
     public abstract class CommonConf
