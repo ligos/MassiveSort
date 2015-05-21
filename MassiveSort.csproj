@@ -45,6 +45,8 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Comparers\ConservativeClrOffsetComparer.cs" />
+    <Compile Include="Comparers\OptimisedClrOffsetComparer.cs" />
     <Compile Include="Comparers\OptimisedClrByteArrayComparer.cs" />
     <Compile Include="Comparers\ConservativeClrByteArrayComparer.cs" />
     <Compile Include="Comparers\PInvokeByteArrayComparer.cs" />

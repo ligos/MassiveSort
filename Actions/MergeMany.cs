@@ -293,6 +293,7 @@ namespace MurrayGrant.MassiveSort.Actions
             var result = new Dictionary<string, FileResult>(shardFiles.Length);
             try
             {
+                // PERF: each file can be split in parallel, provided we synchronise on the resulting file streams.
                 foreach (var f in files)
                     SplitFile(shardFiles, lineCounts, f, 1);
                 for (int i = 0; i < shardFiles.Length; i++)
@@ -319,6 +320,7 @@ namespace MurrayGrant.MassiveSort.Actions
                 
                 try
                 {
+                    // PERF: each file can be split in parallel, provided we synchronise on the resulting file streams.
                     SplitFile(shardFiles, lineCounts, f, shardSize);
                     for (int i = 0; i < shardFiles.Length; i++)
                         result.Add(shardFiles[i].Name, new FileResult(new FileInfo(shardFiles[i].Name), lineCounts[i]));
@@ -571,6 +573,67 @@ namespace MurrayGrant.MassiveSort.Actions
             long totalLinesRead = 0;
 
             // Split into large chunks to sort.
+            var sortChunks = this.SplitIntoChunksForBulkSorting(toSort);
+            Console.WriteLine("There are {0:N0} x {1:N1}MB chunk(s) to sort.", sortChunks.Count(), _Conf.MaxSortSize / oneMbAsDouble);
+
+            var allSw = Stopwatch.StartNew();
+            using (var output = new FileStream(_Conf.OutputFile, FileMode.Create, FileAccess.Write, FileShare.None, _Conf.OutputBufferSize))
+            {
+                // Now sort each chunk.
+                // PERF: can read and sort each chunk in parallel, but must write at the end in the correct sequence.
+                int chunkNum = 1;
+                foreach (var ch in sortChunks)
+                {
+                    Console.Write("Sorting chunk {0:N0} with {3:N0} files ({1} - {2}: {4:N1}MB, {5:N0} lines)...", chunkNum, ch.First().File.Name, ch.Last().File.Name, ch.Count(), ch.Sum(x => x.File.Length) / oneMbAsDouble, ch.Sum(x => x.Lines));
+                    var chSw = Stopwatch.StartNew();
+
+
+                    // Read the files for the chunk into a single array for sorting.
+                    // PERF: this represents ~10% of the time in this loop.
+                    var readSw = Stopwatch.StartNew();
+                    var chunkData = this.ReadFilesForSorting(ch);
+                    var offsets = this.FindWordBoundariesForSorting(chunkData, ch);     // PERF: this is ~8%.
+                    totalLinesRead += ch.Sum(x => x.Lines);
+                    readSw.Stop();
+
+                    // Actually sort them!
+                    // PERF: this represents ~2/3 of the time in this loop.
+                    // PERF: it's not entirely obvious from the trace, but a significant part of that time is in the comparer.
+                    var sortSw = Stopwatch.StartNew();
+                    var comparer = this.GetOffsetComparer(chunkData);
+                    if (_Conf.SortAlgorithm == MergeConf.SortAlgorithms.Auto || _Conf.SortAlgorithm == MergeConf.SortAlgorithms.DefaultArray)
+                        Array.Sort(offsets, comparer);
+                    else if (_Conf.SortAlgorithm == MergeConf.SortAlgorithms.LinqOrderBy)
+                        offsets = offsets.OrderBy(x => x, comparer).ToArray();
+                    else if (_Conf.SortAlgorithm == MergeConf.SortAlgorithms.TimSort)
+                        offsets.TimSort(comparer.Compare);
+                    else
+                        throw new Exception("Unknown sort algorithm: " + _Conf.SortAlgorithm);
+                    sortSw.Stop();
+                    
+                    // Remove duplicates and write to disk.
+                    // PERF: this represents ~20% of the time in this loop. It cannot be parallelised.
+                    var dedupAndWriteSw = Stopwatch.StartNew();
+                    var linesWritten = this.WriteAndDeDupe(chunkData, offsets, output, (IEqualityComparer<OffsetAndLength>)comparer);
+                    dedupAndWriteSw.Stop();
+
+
+                    chSw.Stop();
+                    Console.WriteLine(" Done (in {0:N1}ms).", chSw.Elapsed.TotalMilliseconds);
+                    if (_Conf.Debug)
+                        Console.WriteLine("   Read {0:N0} lines in {1:N1}ms, sorted in {2:N1}ms, wrote {3:N0} lines in {4:N1}ms, {5:N0} duplicates removed.", offsets.Length, readSw.Elapsed.TotalMilliseconds, sortSw.Elapsed.TotalMilliseconds, linesWritten, dedupAndWriteSw.Elapsed.TotalMilliseconds, offsets.Length - linesWritten);
+
+                    totalLinesWritten += linesWritten;
+                    chunkNum++;
+                }
+                output.Flush();
+            }
+            allSw.Stop();
+            Console.WriteLine("Sorted{2}: {0:N0} lines remain, {3:N0} duplicates removed ({1:N1} sec)", totalLinesWritten, allSw.Elapsed.TotalSeconds, _Conf.LeaveDuplicates ? "" : " and removed duplicates", totalLinesRead - totalLinesWritten);
+        }
+
+        private IEnumerable<IEnumerable<FileResult>> SplitIntoChunksForBulkSorting(IEnumerable<FileResult> toSort)
+        {
             var cumulativeSize = 0L;
             var sortChunks = new List<List<FileResult>>();
             var chunk = new List<FileResult>();
@@ -586,67 +649,9 @@ namespace MurrayGrant.MassiveSort.Actions
                 cumulativeSize += fi.File.Length;
             }
             sortChunks.Add(chunk);
-            Console.WriteLine("There are {0:N0} x {1:N1}MB chunk(s) to sort.", sortChunks.Count, _Conf.MaxSortSize / oneMbAsDouble);
-
-            var allSw = Stopwatch.StartNew();
-            using (var output = new FileStream(_Conf.OutputFile, FileMode.Create, FileAccess.Write, FileShare.None, _Conf.OutputBufferSize))
-            {
-                // Now sort each chunk.
-                int chunkNum = 1;
-                foreach (var ch in sortChunks)
-                {
-                    Console.Write("Sorting chunk {0:N0} with {3:N0} files ({1} - {2}: {4:N1}MB, {5:N0} lines)...", chunkNum, ch.First().File.Name, ch.Last().File.Name, ch.Count, ch.Sum(x => x.File.Length) / oneMbAsDouble, ch.Sum(x => x.Lines));
-                    var chSw = Stopwatch.StartNew();
-
-                    var comparer = this.GetComparer();
-
-                    // Read the files for the chunk into a single array for sorting.
-                    var readSw = Stopwatch.StartNew();
-                    var lines = ch.SelectMany(f => f.File.YieldLinesAsByteArray((int)Math.Min(f.File.Length, _Conf.ReadBufferSize), _Conf.LineBufferSize)).ToArray();
-                    totalLinesRead += lines.Length;
-                    readSw.Stop();
-
-                    // Actually sort them!
-                    var sortSw = Stopwatch.StartNew();
-                    if (_Conf.SortAlgorithm == MergeConf.SortAlgorithms.Auto || _Conf.SortAlgorithm == MergeConf.SortAlgorithms.DefaultArray)
-                        Array.Sort(lines, comparer);
-                    else if (_Conf.SortAlgorithm == MergeConf.SortAlgorithms.LinqOrderBy)
-                        lines = lines.OrderBy(x => x, comparer).ToArray();
-                    else if (_Conf.SortAlgorithm == MergeConf.SortAlgorithms.TimSort)
-                        lines.TimSort(comparer.Compare);
-                    else
-                        throw new Exception("Unknown sort algorithm: " + _Conf.SortAlgorithm);
-                    sortSw.Stop();
-                    
-                    // Remove duplicates and write to disk.
-                    var dedupAndWriteSw = Stopwatch.StartNew();
-                    long linesWritten = 0;
-                    var equalityComparer = this.GetEqualityComparer();
-                    var linesToWrite = lines as IEnumerable<byte[]>;
-                    if (!_Conf.LeaveDuplicates)
-                        linesToWrite = linesToWrite.DistinctWhenSorted(equalityComparer.Equals);
-                    foreach (var l in linesToWrite)
-                    {
-                        output.Write(l, 0, l.Length);
-                        output.WriteByte(newlineByte);
-                        linesWritten++;
-                    }
-                    dedupAndWriteSw.Stop();
-                    chSw.Stop();
-                    Console.WriteLine(" Done (in {0:N1}ms).", chSw.Elapsed.TotalMilliseconds);
-                    if (_Conf.Debug)
-                        Console.WriteLine("   Read {0:N0} lines in {1:N1}ms, sorted in {2:N1}ms, wrote {3:N0} lines in {4:N1}ms, {5:N0} duplicates removed.", lines.Length, readSw.Elapsed.TotalMilliseconds, sortSw.Elapsed.TotalMilliseconds, linesWritten, dedupAndWriteSw.Elapsed.TotalMilliseconds, lines.Length - linesWritten);
-
-                    totalLinesWritten += linesWritten;
-                    chunkNum++;
-                }
-                output.Flush();
-            }
-            allSw.Stop();
-            Console.WriteLine("Sorted{2}: {0:N0} lines remain, {3:N0} duplicates removed ({1:N1} sec)", totalLinesWritten, allSw.Elapsed.TotalSeconds, _Conf.LeaveDuplicates ? "" : " and removed duplicates", totalLinesRead - totalLinesWritten);
+            return sortChunks;
         }
-
-        private IComparer<byte[]> GetComparer()
+        private IComparer<byte[]> GetByteArrayComparer()
         {
             switch (_Conf.Comparer)
             {
@@ -660,10 +665,92 @@ namespace MurrayGrant.MassiveSort.Actions
                     throw new Exception("Unknown comparer: " + _Conf.Comparer);
             }
         }
-        private IEqualityComparer<byte[]> GetEqualityComparer()
+        private IEqualityComparer<byte[]> GetByteArrayEqualityComparer()
         {
-            var result = (IEqualityComparer<byte[]>)GetComparer();
+            var result = (IEqualityComparer<byte[]>)GetByteArrayComparer();
             return result;
+        }
+
+        private IComparer<OffsetAndLength> GetOffsetComparer(byte[] data)
+        {
+            switch (_Conf.Comparer)
+            {
+                case MergeConf.Comparers.ConservativeClr:
+                    return new Comparers.ConservativeClrOffsetComparer(data);
+                case MergeConf.Comparers.OptimisedClr:
+                    return new Comparers.OptimisedClrOffsetComparer(data);
+                case MergeConf.Comparers.Native:
+                    throw new NotImplementedException("Native Offset Comparer is not yet implemented.");
+                default:
+                    throw new Exception("Unknown comparer: " + _Conf.Comparer);
+            }
+        }
+
+        private byte[] ReadFilesForSorting(IEnumerable<FileResult> fs)
+        {
+            // Read each file in one hit.
+            // PERF: this could be done in parallel.
+            var data = new byte[(int)fs.Sum(x => x.File.Length)];
+            {
+                int offset = 0;
+                foreach (var f in fs)
+                {
+                    using (var stream = new FileStream(f.File.FullName, FileMode.Open, FileAccess.Read, FileShare.Read))
+                    {
+                        stream.Read(data, offset, (int)f.File.Length);
+                    }
+                    offset += (int)f.File.Length;
+                }
+            }
+
+            return data;
+        }
+        private OffsetAndLength[] FindWordBoundariesForSorting(byte[] data, IEnumerable<FileResult> fs)
+        {
+            // Create an index into the files based on new lines.
+            // Because we've processed all incoming files, we know there will be a single new line character after each line.
+            // PERF: this could be done in parallel once we align to the start of words.
+            var offsets = new OffsetAndLength[fs.Sum(x => x.Lines)];
+            int offset = 0;
+            int start = 0;
+            int end = 0;
+            for (int i = 0; i < data.Length; i++)
+            {
+                if (data[i] == newlineByte)
+                {
+                    offsets[offset] = new OffsetAndLength(start, end - start);
+                    offset++;
+                    start = end + 1;
+                    end = i + 1;
+                }
+                else
+                {
+                    end++;
+                }
+            }
+            return offsets;
+        }
+
+        private long WriteAndDeDupe(byte[] chunkData, OffsetAndLength[] offsets, FileStream output, IEqualityComparer<OffsetAndLength> comparer)
+        {
+            long linesWritten = 0;
+            Func<int, OffsetAndLength, OffsetAndLength, bool> writeWordPredicate = (idx, c, p) => true;
+            if (!_Conf.LeaveDuplicates)
+                writeWordPredicate = (idx, c, p) => idx > 0 && !comparer.Equals(c, p);
+
+            OffsetAndLength previous = OffsetAndLength.Empty;
+            for (int i = 0; i < offsets.Length; i++)
+            {
+                var current = offsets[i];
+                if (writeWordPredicate(offsets.Length, current, previous))
+                {
+                    output.Write(chunkData, current.Offset, current.Length);
+                    output.WriteByte(newlineByte);
+                    linesWritten++;
+                }
+                previous = current;
+            }
+            return linesWritten;
         }
         #endregion
 
