@@ -179,5 +179,24 @@ namespace MurrayGrant.MassiveSort
                 first = false;
             }
         }
+
+        public static string ToSizedString(this TimeSpan ts)
+        {
+            ts = new TimeSpan(Math.Abs(ts.Ticks));
+
+            if (ts.TotalSeconds < 1)
+                return ts.TotalMilliseconds.ToString("N2") + " ms";
+            else if (ts.TotalSeconds < 10)
+                return ts.TotalMilliseconds.ToString("N1") + " ms";
+            else if (ts.TotalSeconds < 300)
+                return ts.TotalSeconds.ToString("N2") + " sec";
+            else if (ts.TotalMinutes < 90)
+                return ts.TotalMinutes.ToString("N2") + " min";
+            else if (ts.TotalHours < 36)
+                return ts.TotalHours.ToString("N2") + " hrs";
+            else
+                return String.Format("{0:N0} day{2}, {1:N1} hrs.", ts.Days, (ts.TotalDays - ts.Days) / 24.0, ts.Days > 1 ? "s" : "");
+
+        }
     }
 }

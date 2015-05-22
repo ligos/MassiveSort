@@ -58,18 +58,19 @@ namespace MurrayGrant.MassiveSort
 
             // Make it so, number one!
             var sw = Stopwatch.StartNew();
-            action.Do();
-            sw.Stop();
-            if (sw.Elapsed.TotalSeconds < 5)
-                Console.WriteLine("Total run time {0:N1} ms.", sw.Elapsed.TotalMilliseconds);
-            else if (sw.Elapsed.TotalSeconds < 300)
-                Console.WriteLine("Total run time {0:N2} sec.", sw.Elapsed.TotalSeconds);
-            else if (sw.Elapsed.TotalMinutes < 90)
-                Console.WriteLine("Total run time {0:N2} min.", sw.Elapsed.TotalMinutes);
-            else if (sw.Elapsed.TotalHours < 36)
-                Console.WriteLine("Total run time {0:N2} hrs.", sw.Elapsed.TotalHours);
-            else 
-                Console.WriteLine("Total run time {0:N0} days, {1:N1} hrs.", sw.Elapsed.Days, (sw.Elapsed.TotalDays - sw.Elapsed.Days) / 24.0);
+            try
+            {
+                action.Do();
+                sw.Stop();
+            }
+            finally
+            {
+                var asDisposable = action as IDisposable;
+                if (asDisposable != null)
+                    asDisposable.Dispose();
+            }
+
+            Console.WriteLine("Total run time {0:N1}.", sw.Elapsed.ToSizedString());
 
             if (Environment.UserInteractive && Debugger.IsAttached)
             {
