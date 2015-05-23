@@ -6,9 +6,9 @@ using System.Threading.Tasks;
 
 namespace MurrayGrant.MassiveSort.Comparers
 {
-    public class ConservativeClrByteArrayComparer : IComparer<byte[]>, IEqualityComparer<byte[]>
+    public class ClrByteArrayComparer : IComparer<byte[]>, IEqualityComparer<byte[]>
     {
-        public static readonly ConservativeClrByteArrayComparer Value = new ConservativeClrByteArrayComparer();
+        public static readonly ClrByteArrayComparer Value = new ClrByteArrayComparer();
 
         public bool Equals(byte[] first, byte[] second)
         {
@@ -21,12 +21,66 @@ namespace MurrayGrant.MassiveSort.Comparers
             if (first.Length != second.Length)
                 return false;
 
-            for (int i = 0; i < first.Length; i++)
+            // Unroll the loop based on length.
+            // Usage of & rather than && should allow all operations to run in parallel, which should be faster on smaller lengths.
+            switch(first.Length)
             {
-                if (first[i] != second[i])
-                    return false;
+                case 1:
+                    return first[0] == second[0];
+                case 2:
+                    return first[0] == second[0] 
+                         & first[1] == second[1];
+                case 3:
+                    return first[0] == second[0] 
+                         & first[1] == second[1]
+                         & first[2] == second[2];
+
+                // TODO: perf analysis of BitConverter.
+                case 4:
+                    return first[0] == second[0]
+                         & first[1] == second[1]
+                         & first[2] == second[2]
+                         & first[3] == second[3];
+                case 5:
+                    return first[0] == second[0]
+                         & first[1] == second[1]
+                         & first[2] == second[2]
+                         & first[3] == second[3]
+                         & first[4] == second[4];
+                case 6:
+                    return first[0] == second[0]
+                         & first[1] == second[1]
+                         & first[2] == second[2]
+                         & first[3] == second[3]
+                         & first[4] == second[4]
+                         & first[5] == second[5];
+                case 7:
+                    return first[0] == second[0]
+                         & first[1] == second[1]
+                         & first[2] == second[2]
+                         & first[3] == second[3]
+                         & first[4] == second[4]
+                         & first[5] == second[5]
+                         & first[6] == second[6];
+                case 8:
+                    return first[0] == second[0]
+                         & first[1] == second[1]
+                         & first[2] == second[2]
+                         & first[3] == second[3]
+                         & first[4] == second[4]
+                         & first[5] == second[5]
+                         & first[6] == second[6]
+                         & first[7] == second[7];
+
+                default:
+                    for (int i = 0; i < first.Length; i++)
+                    {
+                        if (first[i] != second[i])
+                            return false;
+                    }
+                    return true;
+
             }
-            return true;
         }
 
         public int GetHashCode(byte[] bytes)

@@ -30,7 +30,7 @@ namespace MurrayGrant.MassiveSort.Actions
             this.DegreeOfParallelism = Environment.ProcessorCount;      // TODO: default to the number of physical rather than logical cores.
 
             this.SortAlgorithm = SortAlgorithms.TimSort;    // Sort algorithm to use. 
-            this.Comparer = Comparers.OptimisedClr;         // IComparer implementation to use.
+            this.Comparer = Comparers.Clr;                  // IComparer implementation to use.
         }
 
         [OptionArray('i', "input")]
@@ -106,14 +106,9 @@ namespace MurrayGrant.MassiveSort.Actions
         public enum Comparers
         {
             /// <summary>
-            /// A conservative, entirely .NET comparer.
+            /// A comparer in pure c#.
             /// </summary>
-            ConservativeClr,
-
-            /// <summary>
-            /// An optimised, entirely .NET comparer.
-            /// </summary>
-            OptimisedClr,
+            Clr,
 
             /// <summary>
             /// A more optimised comparer which uses native P/Invoke to memcmp()
@@ -384,11 +379,13 @@ namespace MurrayGrant.MassiveSort.Actions
             if (!String.IsNullOrEmpty(moveLastShardToPath))
             {
                 File.Delete(moveLastShardToPath);
-                File.Move(emptyShardPath, moveLastShardToPath);
-                var old = result[emptyShardPath];
                 result.Remove(moveLastShardToPath);
-                result.Add(moveLastShardToPath, new FileResult(new FileInfo(moveLastShardToPath), lastShardLineCount));
-
+                // Everything may have been moved from the shard (common for $HEX[..]).
+                if (File.Exists(emptyShardPath))
+                {
+                    File.Move(emptyShardPath, moveLastShardToPath);
+                    result.Add(moveLastShardToPath, new FileResult(new FileInfo(moveLastShardToPath), lastShardLineCount));
+                }
             }
             
             flushSw.Stop();
@@ -690,10 +687,8 @@ namespace MurrayGrant.MassiveSort.Actions
         {
             switch (_Conf.Comparer)
             {
-                case MergeConf.Comparers.ConservativeClr:
-                    return Comparers.ConservativeClrByteArrayComparer.Value;
-                case MergeConf.Comparers.OptimisedClr:
-                    return Comparers.OptimisedClrByteArrayComparer.Value;
+                case MergeConf.Comparers.Clr:
+                    return Comparers.ClrByteArrayComparer.Value;
                 case MergeConf.Comparers.Native:
                     return Comparers.PInvokeByteArrayComparer.Value;
                 default:
@@ -710,10 +705,8 @@ namespace MurrayGrant.MassiveSort.Actions
         {
             switch (_Conf.Comparer)
             {
-                case MergeConf.Comparers.ConservativeClr:
-                    return new Comparers.ConservativeClrOffsetComparer(data);
-                case MergeConf.Comparers.OptimisedClr:
-                    return new Comparers.OptimisedClrOffsetComparer(data);
+                case MergeConf.Comparers.Clr:
+                    return new Comparers.ClrOffsetComparer(data);
                 case MergeConf.Comparers.Native:
                     throw new NotImplementedException("Native Offset Comparer is not yet implemented.");
                 default:

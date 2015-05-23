@@ -6,11 +6,11 @@ using System.Threading.Tasks;
 
 namespace MurrayGrant.MassiveSort.Comparers
 {
-    public class ConservativeClrOffsetComparer : IComparer<OffsetAndLength>, IEqualityComparer<OffsetAndLength>
+    public class ClrOffsetComparer : IComparer<OffsetAndLength>, IEqualityComparer<OffsetAndLength>
     {
         private readonly byte[] _Data;
 
-        public ConservativeClrOffsetComparer(byte[] data)
+        public ClrOffsetComparer(byte[] data)
         {
             this._Data = data;
         }
@@ -22,6 +22,7 @@ namespace MurrayGrant.MassiveSort.Comparers
             if (first.Length != second.Length)
                 return false;
 
+            // PERF: tried to unroll this, but it didn't improve performance.
             for (int i = 0; i < first.Length; i++)
             {
                 if (this._Data[first.Offset+i] != this._Data[second.Offset+i])
@@ -37,6 +38,8 @@ namespace MurrayGrant.MassiveSort.Comparers
 
         public int Compare(OffsetAndLength first, OffsetAndLength second)
         {
+            // PERF: this is the hot method when sorting.
+
             if (first.Length == second.Length)
                 // Same length: just return the comparison result.
                 return this.CompareToLength(first, second, first.Length);
@@ -59,7 +62,7 @@ namespace MurrayGrant.MassiveSort.Comparers
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         private int CompareToLength(OffsetAndLength first, OffsetAndLength second, int len)
         {
-            // Assume that len <= first.Length and len <= second.Length
+            // PERF: tried to unroll this, but it didn't improve performance.
             for (int i = 0; i < len; i++)
             {
                 var compareResult = this._Data[first.Offset + i].CompareTo(this._Data[second.Offset + i]);
