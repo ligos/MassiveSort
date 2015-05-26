@@ -213,5 +213,21 @@ namespace MurrayGrant.MassiveSort
                 return String.Format("{0:N0} day{2}, {1:N1} hrs.", ts.Days, (ts.TotalDays - ts.Days) / 24.0, ts.Days > 1 ? "s" : "");
 
         }
+
+        public static int PhysicalCoreCount()
+        {
+            if (Environment.OSVersion.Platform == PlatformID.Win32NT)
+            {
+                // http://stackoverflow.com/a/2670568
+                int coreCount = 0;
+                foreach (var item in new System.Management.ManagementObjectSearcher("Select NumberOfCores from Win32_Processor").Get())
+                {
+                    coreCount += int.Parse(item["NumberOfCores"].ToString());
+                }
+                return coreCount;
+            }
+            else
+                throw new NotImplementedException("PhysicalCoreCount() is not supported on " + Environment.OSVersion.Platform);
+        }
     }
 }
