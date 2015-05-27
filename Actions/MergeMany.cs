@@ -43,6 +43,7 @@ namespace MurrayGrant.MassiveSort.Actions
             this.LeaveDuplicates = false;
             this.SaveStats = false;
             this.DegreeOfParallelism = Helpers.PhysicalCoreCount();
+            this.DegreeOfIOParallelism = 8;                 // Default of 8 IO workers. Should provide a balance between SSD and HDD.
 
             this.SortAlgorithm = SortAlgorithms.TimSort;    // Sort algorithm to use. 
             this.Comparer = Comparers.Clr;                  // IComparer implementation to use.
@@ -89,6 +90,8 @@ namespace MurrayGrant.MassiveSort.Actions
 
         [Option('w', "workers")]
         public int DegreeOfParallelism { get; set; }
+        [Option("io-workers")]
+        public int DegreeOfIOParallelism { get; set; }
 
         [Option("sort-algorithm")]
         public SortAlgorithms SortAlgorithm { get; set; }
@@ -211,6 +214,7 @@ namespace MurrayGrant.MassiveSort.Actions
 
         private readonly MergeConf _Conf;
         private ParallelOptions _ParallelOptsForConfiguredDegreeOfParallelism;
+        private ParallelOptions _ParallelOptsForConfiguredDegreeOfIOParallelism;
 
         private StreamWriter _StatsFile;
 
@@ -245,6 +249,9 @@ namespace MurrayGrant.MassiveSort.Actions
             var opts = new ParallelOptions();
             opts.MaxDegreeOfParallelism = _Conf.DegreeOfParallelism;
             this._ParallelOptsForConfiguredDegreeOfParallelism = opts;
+            var ioOpts = new ParallelOptions();
+            ioOpts.MaxDegreeOfParallelism = _Conf.DegreeOfIOParallelism;
+            this._ParallelOptsForConfiguredDegreeOfIOParallelism = ioOpts;
 
             InitTempFolder();   // A bit of house cleaning.
 
@@ -381,14 +388,14 @@ namespace MurrayGrant.MassiveSort.Actions
 
             var emptyShardPath = shardFiles.Last().Name;
             var toDelete = shardFiles.Where(x => x.Length == 0L).Select(x => x.Name).ToList();
-            Parallel.ForEach(shardFiles, fs =>
+            Parallel.ForEach(shardFiles, _ParallelOptsForConfiguredDegreeOfIOParallelism, fs =>
             {
                 fs.Flush();
                 fs.Close();
             });
             
             // Delete any zero length files.
-            Parallel.ForEach(toDelete, f => { File.Delete(f); });
+            Parallel.ForEach(toDelete, _ParallelOptsForConfiguredDegreeOfIOParallelism, f => { File.Delete(f); });
             
             // Replace the file we were just processing with the 'empty' shard.
             // This only happens on sub level splits.
@@ -419,7 +426,7 @@ namespace MurrayGrant.MassiveSort.Actions
             try
             {
                 // The normal files.
-                Parallel.For(0, 256, i =>
+                Parallel.For(0, 256, _ParallelOptsForConfiguredDegreeOfIOParallelism, i =>
                 {
                     var file = Path.Combine(tempFolder, initialShard + i.ToString("x2")) + ".txt";
                     var stream = new FileStream(file, FileMode.OpenOrCreate, FileAccess.Write, FileShare.None, tempFileBufferSize);
@@ -698,44 +705,56 @@ namespace MurrayGrant.MassiveSort.Actions
             {
                 // Now sort each chunk.
                 // PERF: can read and sort each chunk in parallel, but must write at the end in the correct sequence.
-                int chunkNum = 1;
-                foreach (var ch in sortChunks)
+                var sortedChunks = sortChunks
+                    .AsParallel().AsOrdered()
+                    .WithDegreeOfParallelism(_Conf.DegreeOfParallelism)
+                    .WithMergeOptions(ParallelMergeOptions.NotBuffered)
+                    .Select((ch, chNum) => {
+                        Console.Write("Sorting chunk {0:N0} ({1} - {2})...", chNum+1, ch.First().File.Name, ch.Last().File.Name);
+                        this.WriteStats("Sorting chunk {0:N0} with {3:N0} files ({1} - {2}: {4:N1}MB, {5:N0} lines)...", chNum+1, ch.First().File.Name, ch.Last().File.Name, ch.Count(), ch.Sum(x => x.File.Length) / oneMbAsDouble, ch.Sum(x => x.Lines));
+
+                        // Read the files for the chunk into a single array for sorting.
+                        // PERF: this represents ~10% of the time in this loop.
+                        var readSw = Stopwatch.StartNew();
+                        var chunkData = this.ReadFilesForSorting(ch);
+                        var offsets = this.FindLineBoundariesForSorting(chunkData, ch);     // PERF: this is ~8%.
+                        totalLinesRead += ch.Sum(x => x.Lines);
+                        readSw.Stop();
+
+                        // Actually sort them!
+                        // PERF: this represents ~2/3 of the time in this loop.
+                        // PERF: it's not entirely obvious from the trace, but a significant part of that time is in the comparer.
+                        var sortSw = Stopwatch.StartNew();
+                        var comparer = this.GetOffsetComparer(chunkData);
+                        offsets = this.SortLines(chunkData, offsets, comparer);
+                        sortSw.Stop();
+                        Console.Write(" Sorted. ");
+
+                        return new {
+                            ch, 
+                            chNum = chNum + 1,
+                            chunkData,
+                            offsets,
+                            comparer,
+                            readTime = readSw.Elapsed,
+                            sortTime = sortSw.Elapsed,
+                        };
+                    });
+
+                foreach (var ch in sortedChunks)
                 {
-                    Console.Write("Sorting chunk {0:N0} ({1} - {2})...", chunkNum, ch.First().File.Name, ch.Last().File.Name);
-                    this.WriteStats("Sorting chunk {0:N0} with {3:N0} files ({1} - {2}: {4:N1}MB, {5:N0} lines)...", chunkNum, ch.First().File.Name, ch.Last().File.Name, ch.Count(), ch.Sum(x => x.File.Length) / oneMbAsDouble, ch.Sum(x => x.Lines));
-                    var chSw = Stopwatch.StartNew();
-
-
-                    // Read the files for the chunk into a single array for sorting.
-                    // PERF: this represents ~10% of the time in this loop.
-                    var readSw = Stopwatch.StartNew();
-                    var chunkData = this.ReadFilesForSorting(ch);
-                    var offsets = this.FindLineBoundariesForSorting(chunkData, ch);     // PERF: this is ~8%.
-                    totalLinesRead += ch.Sum(x => x.Lines);
-                    readSw.Stop();
-
-                    // Actually sort them!
-                    // PERF: this represents ~2/3 of the time in this loop.
-                    // PERF: it's not entirely obvious from the trace, but a significant part of that time is in the comparer.
-                    var sortSw = Stopwatch.StartNew();
-                    var comparer = this.GetOffsetComparer(chunkData);
-                    offsets = this.SortLines(chunkData, offsets, comparer);
-                    sortSw.Stop();
-                    
                     // Remove duplicates and write to disk.
                     // PERF: this represents ~20% of the time in this loop. It cannot be parallelised.
                     var dedupAndWriteSw = Stopwatch.StartNew();
-                    var linesWritten = this.WriteAndDeDupe(chunkData, offsets, output, (IEqualityComparer<OffsetAndLength>)comparer);
+                    var linesWritten = this.WriteAndDeDupe(ch.chunkData, ch.offsets, output, (IEqualityComparer<OffsetAndLength>)ch.comparer);
+                    totalLinesWritten += linesWritten;
                     dedupAndWriteSw.Stop();
 
-
-                    chSw.Stop();
-                    Console.WriteLine(" Done.", chSw.Elapsed.TotalMilliseconds);
-                    this.WriteStats("Chunk #{0}: processed in {1:N2} sec. Read {2:N0} lines in {3:N1}ms, sorted in {4:N1}ms, wrote {5:N0} lines in {6:N1}ms, {7:N0} duplicates removed.", chunkNum, chSw.Elapsed.TotalSeconds, offsets.Length, readSw.Elapsed.TotalMilliseconds, sortSw.Elapsed.TotalMilliseconds, linesWritten, dedupAndWriteSw.Elapsed.TotalMilliseconds, offsets.Length - linesWritten);
-
-                    totalLinesWritten += linesWritten;
-                    chunkNum++;
+                    Console.WriteLine(" Written.");
+                    var chTime = ch.readTime + ch.sortTime + dedupAndWriteSw.Elapsed;
+                    this.WriteStats("Chunk #{0}: processed in {1:N2} sec. Read {2:N0} lines in {3:N1}ms, sorted in {4:N1}ms, wrote {5:N0} lines in {6:N1}ms, {7:N0} duplicates removed.", ch.chNum, chTime.TotalSeconds, ch.offsets.Length, ch.readTime.TotalMilliseconds, ch.sortTime.TotalMilliseconds, linesWritten, dedupAndWriteSw.Elapsed.TotalMilliseconds, ch.offsets.Length - linesWritten);
                 }
+
                 output.Flush();
             }
             allSw.Stop();
