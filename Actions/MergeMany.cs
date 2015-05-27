@@ -954,6 +954,8 @@ namespace MurrayGrant.MassiveSort.Actions
                 Console.WriteLine("  Line Buffer Size: " + _Conf.LineBufferSize.Bytes().ToString());
                 Console.WriteLine("  Temp File Buffer Size: " + _Conf.TempFileBufferSize.Bytes().ToString());
                 Console.WriteLine("  Output File Buffer Size: " + _Conf.OutputBufferSize.Bytes().ToString());
+                Console.WriteLine("  Workers: " + _Conf.DegreeOfParallelism);
+                Console.WriteLine("  IO Workers: " + _Conf.DegreeOfIOParallelism);
                 Console.WriteLine("  Temp Folder: " + _Conf.TempFolder);
                 Console.WriteLine("  Sort Algorithm: " + _Conf.SortAlgorithm);
                 Console.WriteLine("  Comparer: " + _Conf.Comparer);
