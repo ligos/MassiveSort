@@ -51,6 +51,7 @@
     <Compile Include="Comparers\ClrByteArrayComparer.cs" />
     <Compile Include="Comparers\PInvokeByteArrayComparer.cs" />
     <Compile Include="Conf.cs" />
+    <Compile Include="ConsoleProgressReporter.cs" />
     <Compile Include="FileResult.cs" />
     <Compile Include="Helpers.cs" />
     <Compile Include="Actions\CleanTemp.cs" />
