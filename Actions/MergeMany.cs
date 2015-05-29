@@ -42,6 +42,7 @@ namespace MurrayGrant.MassiveSort.Actions
             this.OutputBufferSize = 256 * 1024;             // Buffer size to use for the final merged output file.
 
             this.LeaveDuplicates = false;
+            this.AggressiveMemoryCollection = false;
             this.SaveStats = false;
             this.DegreeOfParallelism = Helpers.PhysicalCoreCount();
             this.DegreeOfIOParallelism = 8;                 // Default of 8 IO workers. Should provide a balance between SSD and HDD.
@@ -81,6 +82,12 @@ namespace MurrayGrant.MassiveSort.Actions
         /// </summary>
         [Option("leave-duplicates")]
         public bool LeaveDuplicates { get; set; }
+
+        /// <summary>
+        /// If true, does a full garbage collection after each split and sort. Defaults to false.
+        /// </summary>
+        [Option("aggressive-memory-collection")]
+        public bool AggressiveMemoryCollection { get; set; }
 
         /// <summary>
         /// If true, writes stats to a parallel files to the OutputFile. Defaults to false.
@@ -357,6 +364,9 @@ namespace MurrayGrant.MassiveSort.Actions
                 this.FlushFiles(shardFiles, null, 0L, result);
             }
 
+            if (_Conf.AggressiveMemoryCollection)
+                GC.Collect();
+
             return result;
         }
         private void DoSubLevelSplit(IEnumerable<FileInfo> files, int shardSize, IDictionary<string, FileResult> result)
@@ -380,6 +390,9 @@ namespace MurrayGrant.MassiveSort.Actions
                 {
                     this.FlushFiles(shardFiles, f.FullName, lineCounts.Last(), result);
                 }
+
+                if (_Conf.AggressiveMemoryCollection)
+                    GC.Collect();
             });
         }
         private void FlushFiles(FileStream[] shardFiles, string moveLastShardToPath, long lastShardLineCount, IDictionary<string, FileResult> result)
@@ -759,8 +772,8 @@ namespace MurrayGrant.MassiveSort.Actions
                     this.WriteStats("Chunk #{0}: processed in {1:N2} sec. Read {2:N0} lines in {3:N1}ms, sorted in {4:N1}ms, wrote {5:N0} lines in {6:N1}ms, {7:N0} duplicates removed.", ch.chNum, chTime.TotalSeconds, ch.data.LineOffsets.Length, ch.readTime.TotalMilliseconds, ch.sortTime.TotalMilliseconds, linesWritten, dedupAndWriteSw.Elapsed.TotalMilliseconds, ch.data.LineOffsets.Length - linesWritten);
                     
                     ch.data.Dispose();      // Release references to the large arrays allocated when reading files.
-                    if (_Conf.Debug)
-                        GC.Collect();       // We need to know that memory is able to be reclaimed.
+                    if (_Conf.AggressiveMemoryCollection)
+                        GC.Collect();       
                 }
 
                 output.Flush();
@@ -962,9 +975,26 @@ namespace MurrayGrant.MassiveSort.Actions
             if (!_Conf.Debug)
                 return;
 
+            // During the phase 1 read (splitting / sharding), the max memory usage is:
+            var estForSplitPerWorker = _Conf.ReadBufferSize + _Conf.LineBufferSize + (257 * _Conf.TempFileBufferSize);      // 257 is the number of files open - 256 for a byte of sharding, plus one empty shard.
+            var estForSortPerWorker = _Conf.OutputBufferSize        // Output file buffer
+                                    + _Conf.MaxSortSize             // Sorting buffer
+                                    + (_Conf.MaxSortSize / 9 * System.Runtime.InteropServices.Marshal.SizeOf(typeof(OffsetAndLength)))    // Index into sort buffer. 9 is a conservative guess at the average line length.
+                                    + (_Conf.MaxSortSize / 9 * System.Runtime.InteropServices.Marshal.SizeOf(typeof(OffsetAndLength)))    // Additional sorting buffers / stack. 9 is a conservative guess at the average line length.
+                                    + (10 * 1024 * 1024);           // TPL / Parallel overhead (eg: additional thread, TPL buffering and marshalling).
             Console.WriteLine("Estimated Memory Usage:");
+            Console.WriteLine("  General Overhead: ~20-30MB");
+            Console.WriteLine("  Split Phase (per worker): {0:N1}MB", estForSplitPerWorker / oneMbAsDouble);
+            Console.WriteLine("  Split Phase for {1} worker(s): {0:N1}MB", (estForSplitPerWorker * _Conf.DegreeOfParallelism) / oneMbAsDouble, _Conf.DegreeOfParallelism);
+            Console.WriteLine("  Sort Phase (per worker): {0:N1}MB", estForSortPerWorker / oneMbAsDouble);
+            Console.WriteLine("  Sort Phase for {1} worker(s): {0:N1}MB", (estForSortPerWorker * _Conf.DegreeOfParallelism) / oneMbAsDouble, _Conf.DegreeOfParallelism);
+            Console.WriteLine("Note on memory usage:");
+            Console.WriteLine("  .NET uses garbage collection; you may see higher memory use for short times.");
+            Console.WriteLine("  Consider using --aggressive-memory-collection if you are running out of RAM.");
             Console.WriteLine();
         }
+
+
         private void PrintConf()
         {
             if (_Conf.Debug)
