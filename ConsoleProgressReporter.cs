@@ -45,7 +45,8 @@ namespace MurrayGrant.MassiveSort
             if (p.GetType() == typeof(TaskProgress))
             {
                 var tp = (TaskProgress)p;
-                if (Environment.UserInteractive && !Console.IsOutputRedirected)
+                var hasReachedEndOfBuffer = ((Console.WindowHeight + Console.WindowTop) >= (Console.BufferHeight - 1));
+                if (Environment.UserInteractive && !Console.IsOutputRedirected && !hasReachedEndOfBuffer)
                 {
                     // If we're running interactive, we can print as soon as events arrive.
                     // Just need to write them in the right place!!
