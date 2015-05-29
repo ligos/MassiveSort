@@ -60,8 +60,6 @@ namespace MurrayGrant.MassiveSort
                         // Restore cursor position.
                         Console.CursorTop = pos.Top;
                         Console.CursorLeft = pos.Left;
-                        if (Console.CursorLeft == 0)
-                            throw new Exception("What the!?");
                     }
                     
                     // Write message.
