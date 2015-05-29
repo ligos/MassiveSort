@@ -210,7 +210,7 @@ namespace MurrayGrant.MassiveSort.Actions
         const byte newlineByte = (byte)'\n';
         private const byte newline1 = (byte)'\n';
         private const byte newline2 = (byte)'\r';
-        private const double oneMbAsDouble = 1024.0 * 1024.0;
+        private readonly double oneMbAsDouble = Helpers.OneMbAsDouble;
         private static string emptyShardFilename = "!";
 
         private readonly MergeConf _Conf;
@@ -720,8 +720,8 @@ namespace MurrayGrant.MassiveSort.Actions
                         // Read the files for the chunk into a single array for sorting.
                         // PERF: this represents ~10% of the time in this loop.
                         var readSw = Stopwatch.StartNew();
-                        var chunkData = this.ReadFilesForSorting(ch);
-                        var offsets = this.FindLineBoundariesForSorting(chunkData, ch);     // PERF: this is ~8%.
+                        var chunkData = this.ReadFilesForSorting(ch);           // This allocates a large byte[].
+                        var offsets = this.FindLineBoundariesForSorting(chunkData, ch);     // PERF: this is ~8%. This allocates a large Int64[].
                         readSw.Stop();
 
                         // Actually sort them!
@@ -730,14 +730,14 @@ namespace MurrayGrant.MassiveSort.Actions
                         var sortSw = Stopwatch.StartNew();
                         var comparer = this.GetOffsetComparer(chunkData);
                         offsets = this.SortLines(chunkData, offsets, comparer);
+                        var data = new IndexedFileData(chunkData, offsets);
                         sortSw.Stop();
                         _Progress.Report(new TaskProgress(" Sorted. ", false, taskKey));
 
                         return new {
                             ch, 
                             chNum = chNum + 1,
-                            chunkData,
-                            offsets,
+                            data,
                             comparer,
                             taskKey,
                             readTime = readSw.Elapsed,
@@ -750,14 +750,18 @@ namespace MurrayGrant.MassiveSort.Actions
                     // Remove duplicates and write to disk.
                     // PERF: this represents ~20% of the time in this loop. It cannot be parallelised.
                     var dedupAndWriteSw = Stopwatch.StartNew();
-                    var linesWritten = this.WriteAndDeDupe(ch.chunkData, ch.offsets, output, (IEqualityComparer<OffsetAndLength>)ch.comparer);
+                    var linesWritten = this.WriteAndDeDupe(ch.data, output, (IEqualityComparer<OffsetAndLength>)ch.comparer);
                     totalLinesWritten += linesWritten;
-                    totalLinesRead += ch.offsets.Length;
+                    totalLinesRead += ch.data.LineOffsets.Length;
                     dedupAndWriteSw.Stop();
 
                     _Progress.Report(new TaskProgress(" Written.", true, ch.taskKey));
                     var chTime = ch.readTime + ch.sortTime + dedupAndWriteSw.Elapsed;
-                    this.WriteStats("Chunk #{0}: processed in {1:N2} sec. Read {2:N0} lines in {3:N1}ms, sorted in {4:N1}ms, wrote {5:N0} lines in {6:N1}ms, {7:N0} duplicates removed.", ch.chNum, chTime.TotalSeconds, ch.offsets.Length, ch.readTime.TotalMilliseconds, ch.sortTime.TotalMilliseconds, linesWritten, dedupAndWriteSw.Elapsed.TotalMilliseconds, ch.offsets.Length - linesWritten);
+                    this.WriteStats("Chunk #{0}: processed in {1:N2} sec. Read {2:N0} lines in {3:N1}ms, sorted in {4:N1}ms, wrote {5:N0} lines in {6:N1}ms, {7:N0} duplicates removed.", ch.chNum, chTime.TotalSeconds, ch.data.LineOffsets.Length, ch.readTime.TotalMilliseconds, ch.sortTime.TotalMilliseconds, linesWritten, dedupAndWriteSw.Elapsed.TotalMilliseconds, ch.data.LineOffsets.Length - linesWritten);
+                    
+                    ch.data.Dispose();      // Release references to the large arrays allocated when reading files.
+                    if (_Conf.Debug)
+                        GC.Collect();       // We need to know that memory is able to be reclaimed.
                 }
 
                 output.Flush();
@@ -893,9 +897,11 @@ namespace MurrayGrant.MassiveSort.Actions
             return offsets;
         }
 
-        private long WriteAndDeDupe(byte[] chunkData, OffsetAndLength[] offsets, FileStream output, IEqualityComparer<OffsetAndLength> comparer)
+        private long WriteAndDeDupe(IndexedFileData data, FileStream output, IEqualityComparer<OffsetAndLength> comparer)
         {
             long linesWritten = 0;
+            var chunkData = data.Chunk;
+            var offsets = data.LineOffsets;
             Func<int, OffsetAndLength, OffsetAndLength, bool> writeWordPredicate = (idx, c, p) => true;
             if (!_Conf.LeaveDuplicates)
                 writeWordPredicate = (idx, c, p) => idx > 0 && !comparer.Equals(c, p);
