@@ -228,6 +228,9 @@ namespace MurrayGrant.MassiveSort.Actions
 
         public void Dispose()
         {
+            // Try to clean up our temp folder at the end.
+            CleanTempFolder();
+
             if (this._StatsFile != null)
             {
                 this._StatsFile.Flush();
@@ -264,26 +267,22 @@ namespace MurrayGrant.MassiveSort.Actions
                 this._StatsFile = new StreamWriter(_Conf.OutputFile + ".stats", false, Encoding.UTF8);
             }
 
-            // TODO: calculate approximate memory usage.
+            // Calculate approximate memory usage.
+            PrintEstimatedMemoryUsage();
 
-            try
-            {
-                // Snapshot the files we'll be working with.
-                var filesToProcess = this.GatherFiles();
-
-
-                // Stage 1: split / shard files into smaller chunks.
-                var toSort = SplitFiles(filesToProcess);
+            // Snapshot the files we'll be working with.
+            var filesToProcess = this.GatherFiles();
 
 
-                // Stage 2: sort and merge the files.
-                SortFiles(toSort);
-            }
-            finally
-            {
-                // Try to clean up our temp folder at the end.
-                CleanTempFolder();
-            }
+            // Stage 1: split / shard files into smaller chunks.
+            var toSort = SplitFiles(filesToProcess);
+
+
+            // Stage 2: sort and merge the files.
+            SortFiles(toSort);
+
+            // Be proactive about telling people we're wasting their disk space.
+            WarnIfOldTempFilesExist(new DirectoryInfo(Helpers.GetBaseTempFolder()), new DirectoryInfo(_Conf.TempFolder));
         }
 
 
@@ -958,7 +957,14 @@ namespace MurrayGrant.MassiveSort.Actions
         }
         #endregion
 
+        private void PrintEstimatedMemoryUsage()
+        {
+            if (!_Conf.Debug)
+                return;
 
+            Console.WriteLine("Estimated Memory Usage:");
+            Console.WriteLine();
+        }
         private void PrintConf()
         {
             if (_Conf.Debug)
@@ -976,6 +982,7 @@ namespace MurrayGrant.MassiveSort.Actions
                 Console.WriteLine("  Comparer: " + _Conf.Comparer);
                 Console.WriteLine("  Leave Duplicates: " + _Conf.LeaveDuplicates);
                 Console.WriteLine("  Save Stats: " + _Conf.SaveStats);
+                Console.WriteLine();
             }
         }
 
@@ -988,6 +995,20 @@ namespace MurrayGrant.MassiveSort.Actions
         {
             if (Directory.Exists(_Conf.TempFolder))
                 Directory.Delete(_Conf.TempFolder, true);
+        }
+        private void WarnIfOldTempFilesExist(DirectoryInfo tempBase, DirectoryInfo excludeThisFolder)
+        {
+            var excludePath = excludeThisFolder.FullName;
+            var tempFiles = tempBase.EnumerateFiles("*", SearchOption.AllDirectories)
+                                .Where(x => !String.Equals(x.Directory.FullName, excludeThisFolder.FullName, StringComparison.OrdinalIgnoreCase))
+                                .ToList();
+            if (tempFiles.Any())
+            {
+                Console.WriteLine();
+                Console.WriteLine("Warning: {0:N1}MB of old working files remain in '{1}'.", tempFiles.Sum(x => x.Length) / oneMbAsDouble, tempBase.FullName);
+                Console.WriteLine("Use the 'clean' verb to remove them.");
+                Console.WriteLine();
+            }
         }
     }
 }
