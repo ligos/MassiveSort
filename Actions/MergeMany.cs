@@ -46,6 +46,7 @@ namespace MurrayGrant.MassiveSort.Actions
             this.SaveStats = false;
             this.DegreeOfParallelism = Helpers.PhysicalCoreCount();
             this.DegreeOfIOParallelism = 8;                 // Default of 8 IO workers. Should provide a balance between SSD and HDD.
+            this.MaxOutstandingSortedChunks = 10;
 
             this.SortAlgorithm = SortAlgorithms.TimSort;    // Sort algorithm to use. 
             this.Comparer = Comparers.Clr;                  // IComparer implementation to use.
@@ -100,6 +101,13 @@ namespace MurrayGrant.MassiveSort.Actions
         public int DegreeOfParallelism { get; set; }
         [Option("io-workers")]
         public int DegreeOfIOParallelism { get; set; }
+
+        /// <summary>
+        /// The maximum number of chunks which can be sorted, but not yet written to disk.
+        /// Max is determined by available virtual memory. Default is 10 (which requires less than 2GB page file with default settings).
+        /// </summary>
+        [Option("max-outstanding-sorted-chunks")]
+        public int MaxOutstandingSortedChunks { get; set; }
 
         [Option("sort-algorithm")]
         public SortAlgorithms SortAlgorithm { get; set; }
@@ -714,6 +722,8 @@ namespace MurrayGrant.MassiveSort.Actions
 
             long totalLinesWritten = 0;
             long totalLinesRead = 0;
+            var workCount = _Conf.DegreeOfParallelism + _Conf.MaxOutstandingSortedChunks;
+            var workLimiter = new System.Threading.Semaphore(workCount, workCount);
 
             var allSw = Stopwatch.StartNew();
             using (var output = new FileStream(_Conf.OutputFile, FileMode.Create, FileAccess.Write, FileShare.None, _Conf.OutputBufferSize))
@@ -728,6 +738,13 @@ namespace MurrayGrant.MassiveSort.Actions
                         var taskKey = new Object();
                         _Progress.Report(new TaskProgress(String.Format("Sorting chunk {0:N0} ({1} - {2})...", chNum+1, ch.First().File.Name, ch.Last().File.Name), false, taskKey));
                         this.WriteStats("Sorting chunk {0:N0} with {3:N0} files ({1} - {2}: {4:N1}MB, {5:N0} lines)...", chNum+1, ch.First().File.Name, ch.Last().File.Name, ch.Count(), ch.Sum(x => x.File.Length) / oneMbAsDouble, ch.Sum(x => x.Lines));
+
+                        // Wait until work has been written to disk.
+                        // In case of very slow disks (eg: USB2 / 10Mb ethernet) we can sort faster than we can write.
+                        // With enough files, this can exhaust virtual memory.
+                        var waitSw = Stopwatch.StartNew();
+                        workLimiter.WaitOne();
+                        waitSw.Stop();
 
                         // Read the files for the chunk into a single array for sorting.
                         // PERF: this represents ~10% of the time in this loop.
@@ -754,6 +771,7 @@ namespace MurrayGrant.MassiveSort.Actions
                             taskKey,
                             readTime = readSw.Elapsed,
                             sortTime = sortSw.Elapsed,
+                            waitTime = waitSw.Elapsed,
                         };
                     });
 
@@ -767,9 +785,12 @@ namespace MurrayGrant.MassiveSort.Actions
                     totalLinesRead += ch.data.LineOffsets.Length;
                     dedupAndWriteSw.Stop();
 
+                    // Release the work limiter semaphore.
+                    workLimiter.Release();
+
                     _Progress.Report(new TaskProgress(" Written.", true, ch.taskKey));
                     var chTime = ch.readTime + ch.sortTime + dedupAndWriteSw.Elapsed;
-                    this.WriteStats("Chunk #{0}: processed in {1:N2} sec. Read {2:N0} lines in {3:N1}ms, sorted in {4:N1}ms, wrote {5:N0} lines in {6:N1}ms, {7:N0} duplicates removed.", ch.chNum, chTime.TotalSeconds, ch.data.LineOffsets.Length, ch.readTime.TotalMilliseconds, ch.sortTime.TotalMilliseconds, linesWritten, dedupAndWriteSw.Elapsed.TotalMilliseconds, ch.data.LineOffsets.Length - linesWritten);
+                    this.WriteStats("Chunk #{0}: processed in {1:N2} sec. Waited {2:N1} sec, read {3:N0} lines in {4:N1}ms, sorted in {5:N1}ms, wrote {6:N0} lines in {7:N1}ms, {8:N0} duplicates removed.", ch.chNum, chTime.TotalSeconds, ch.waitTime.TotalSeconds, ch.data.LineOffsets.Length, ch.readTime.TotalMilliseconds, ch.sortTime.TotalMilliseconds, linesWritten, dedupAndWriteSw.Elapsed.TotalMilliseconds, ch.data.LineOffsets.Length - linesWritten);
                     
                     ch.data.Dispose();      // Release references to the large arrays allocated when reading files.
                     if (_Conf.AggressiveMemoryCollection)
@@ -987,7 +1008,8 @@ namespace MurrayGrant.MassiveSort.Actions
             Console.WriteLine("  Split Phase (per worker): {0:N1}MB", estForSplitPerWorker / oneMbAsDouble);
             Console.WriteLine("  Split Phase for {1} worker(s): {0:N1}MB", (estForSplitPerWorker * _Conf.DegreeOfParallelism) / oneMbAsDouble, _Conf.DegreeOfParallelism);
             Console.WriteLine("  Sort Phase (per worker): {0:N1}MB", estForSortPerWorker / oneMbAsDouble);
-            Console.WriteLine("  Sort Phase for {1} worker(s): {0:N1}MB", (estForSortPerWorker * _Conf.DegreeOfParallelism) / oneMbAsDouble, _Conf.DegreeOfParallelism);
+            Console.WriteLine("  Sort Phase for {1} worker(s): {0:N1}MB", ((long)estForSortPerWorker * _Conf.DegreeOfParallelism) / oneMbAsDouble, _Conf.DegreeOfParallelism);
+            Console.WriteLine("  Sort Phase for {1} outstanding chunks: {0:N1}MB", ((long)estForSortPerWorker * (_Conf.DegreeOfParallelism + _Conf.MaxOutstandingSortedChunks)) / oneMbAsDouble, _Conf.DegreeOfParallelism + _Conf.MaxOutstandingSortedChunks);
             Console.WriteLine("Note on memory usage:");
             Console.WriteLine("  .NET uses garbage collection; you may see higher memory use for short times.");
             Console.WriteLine("  Consider using --aggressive-memory-collection if you are running out of RAM.");
