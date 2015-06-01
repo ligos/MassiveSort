@@ -51,6 +51,10 @@ namespace MurrayGrant.MassiveSort.Actions
 
             this.SortAlgorithm = SortAlgorithms.TimSort;    // Sort algorithm to use. 
             this.Comparer = Comparers.Clr;                  // IComparer implementation to use.
+
+            this.Whitespace = WhitespaceOptions.NoChange;   // Make no changes to whitespace.
+            this.WhitespaceChars = new byte[] { 0x20, 0x09, 0x0b };     // Whitespace characters.
+            this.ConvertToDollarHex = false;                // Do not convert to $HEX[...] format by default.
         }
 
         [OptionArray('i', "input")]
@@ -151,6 +155,40 @@ namespace MurrayGrant.MassiveSort.Actions
             Native,
 
         }
+
+        [Option("whitespace")]
+        public WhitespaceOptions Whitespace { get; set; }
+        public enum WhitespaceOptions
+        {
+            /// <summary>
+            /// No changes are made to whitespace characters. This is the default.
+            /// </summary>
+            NoChange,
+            /// <summary>
+            /// Leading and trailing whitespace characters are removed.
+            /// </summary>
+            Trim,
+            /// <summary>
+            /// All whitespace characters are removed.
+            /// </summary>
+            Strip,
+        }
+
+        /// <summary>
+        /// Bytes which are considered whitespace.
+        /// Default: 0x09, 0x0b, 0x20
+        /// Note that little endian unicode is supported (the previous 0x00 nul is also removed).
+        /// https://en.wikipedia.org/wiki/Whitespace_character
+        /// </summary>
+        [Option("whitespace-chars")]
+        public byte[] WhitespaceChars { get; set; }
+
+        /// <summary>
+        /// If true, will convert all lines outside printable ASCII range to the $HEX[...] format. False by default.
+        /// https://hashcat.net/trac/ticket/148
+        /// </summary>
+        [Option("convert-to-dollar-hex")]
+        public bool ConvertToDollarHex { get; set; }
 
         public MergeConf ExtraParsing()
         {
@@ -1046,6 +1084,8 @@ namespace MurrayGrant.MassiveSort.Actions
                 Console.WriteLine("  Comparer: " + _Conf.Comparer);
                 Console.WriteLine("  Leave Duplicates: " + _Conf.LeaveDuplicates);
                 Console.WriteLine("  Save Stats: " + _Conf.SaveStats);
+                Console.WriteLine("  Whitespace: " + _Conf.Whitespace);
+                Console.WriteLine("  Convert to $HEX[]: " + _Conf.ConvertToDollarHex);
                 Console.WriteLine();
             }
         }
