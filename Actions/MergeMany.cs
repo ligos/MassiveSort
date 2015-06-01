@@ -363,14 +363,16 @@ namespace MurrayGrant.MassiveSort.Actions
             {
                 // Each file is split in parallel, with the assumption that we synchronise on the resulting file streams in SplitFile().
                 Parallel.ForEach(files, _ParallelOptsForConfiguredDegreeOfParallelism, f => {
-                    SplitFile(shardFiles, lineCounts, f, 1);
+                    var taskKey = new object();
+                    SplitFile(shardFiles, lineCounts, f, 1, taskKey);
                 });
                 for (int i = 0; i < shardFiles.Length; i++)
                     result.Add(shardFiles[i].Name, new FileResult(new FileInfo(shardFiles[i].Name), lineCounts[i]));
             }
             finally
             {
-                this.FlushFiles(shardFiles, null, 0L, result);
+                var taskKey = new object();
+                this.FlushFiles(shardFiles, null, 0L, result, taskKey);
             }
 
             if (_Conf.AggressiveMemoryCollection)
@@ -388,26 +390,27 @@ namespace MurrayGrant.MassiveSort.Actions
             {
                 var shardFiles = CreateShardFiles(Path.GetFileNameWithoutExtension(f.Name));
                 var lineCounts = new long[shardFiles.Length];
+                var taskKey = new object();
 
                 try
                 {
-                    SplitFile(shardFiles, lineCounts, f, shardSize);
+                    SplitFile(shardFiles, lineCounts, f, shardSize, taskKey);
                     for (int i = 0; i < shardFiles.Length; i++)
                         result.Add(shardFiles[i].Name, new FileResult(new FileInfo(shardFiles[i].Name), lineCounts[i]));
                 }
                 finally
                 {
-                    this.FlushFiles(shardFiles, f.FullName, lineCounts.Last(), result);
+                    this.FlushFiles(shardFiles, f.FullName, lineCounts.Last(), result, taskKey);
                 }
 
                 if (_Conf.AggressiveMemoryCollection)
                     GC.Collect();
             });
         }
-        private void FlushFiles(FileStream[] shardFiles, string moveLastShardToPath, long lastShardLineCount, IDictionary<string, FileResult> result)
+        private void FlushFiles(FileStream[] shardFiles, string moveLastShardToPath, long lastShardLineCount, IDictionary<string, FileResult> result, object taskKey)
         {
             // Close and flush the shard files created.
-            _Progress.Report(new BasicProgress("Flushing data to temp files...", false));
+            _Progress.Report(new TaskProgress("Flushing data to temp files...", false, taskKey));
             var flushSw = Stopwatch.StartNew();
 
             var emptyShardPath = shardFiles.Last().Name;
@@ -436,7 +439,7 @@ namespace MurrayGrant.MassiveSort.Actions
             }
             
             flushSw.Stop();
-            _Progress.Report(new BasicProgress(" Done", true));
+            _Progress.Report(new TaskProgress(" Done", true, taskKey));
             this.WriteStats("Flushed data to temp files in {0:N0}ms.", flushSw.Elapsed.TotalMilliseconds);
         }
 
@@ -477,14 +480,13 @@ namespace MurrayGrant.MassiveSort.Actions
             return result;
         }
 
-        private long SplitFile(FileStream[] shardFiles, long[] lineCounts, FileInfo fi, int shardSize)
+        private long SplitFile(FileStream[] shardFiles, long[] lineCounts, FileInfo fi, int shardSize, object taskKey)
         {
             long linesRead = 0;
             long buffersSkipped = 0;
             long buffersRead = 0;
             long extraSeeks = 0;
             var lineBuffer = new byte[_Conf.LineBufferSize];
-            var taskKey = fi.FullName;
             bool shardWithLock = (shardSize == 1 && _ParallelOptsForConfiguredDegreeOfParallelism.MaxDegreeOfParallelism > 1);
 
             _Progress.Report(new TaskProgress(String.Format("Splitting '{0}'...", fi.Name), false, taskKey));
