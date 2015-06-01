@@ -15,6 +15,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Collections.Concurrent;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -730,18 +731,27 @@ namespace MurrayGrant.MassiveSort.Actions
             {
                 // Now sort each chunk.
                 // PERF: can read and sort each chunk in parallel, but must write at the end in the correct sequence.
-                var sortedChunks = sortChunks
+                
+                // We use a partitioner with only one item in each partition so that we begin each chunk in order.
+                // We can have several in flight at any one time (and that is desirable for parallelism), 
+                // but if we schedule out of order, we can deadlock if our final writer or disk is very slow.
+                var parts = Partitioner.Create(0, sortChunks.Count, 1);         
+                var sortedChunks = parts
                     .AsParallel().AsOrdered()
                     .WithDegreeOfParallelism(_Conf.DegreeOfParallelism)
                     .WithMergeOptions(ParallelMergeOptions.NotBuffered)
-                    .Select((ch, chNum) => {
+                    .Select(chIdx => {
+                        var ch = sortChunks[chIdx.Item1];       // Careful to only read the collection!
+                        var chNum = chIdx.Item1 + 1;
+
                         var taskKey = new Object();
-                        _Progress.Report(new TaskProgress(String.Format("Sorting chunk {0:N0} ({1} - {2})...", chNum+1, ch.First().File.Name, ch.Last().File.Name), false, taskKey));
-                        this.WriteStats("Sorting chunk {0:N0} with {3:N0} files ({1} - {2}: {4:N1}MB, {5:N0} lines)...", chNum+1, ch.First().File.Name, ch.Last().File.Name, ch.Count(), ch.Sum(x => x.File.Length) / oneMbAsDouble, ch.Sum(x => x.Lines));
+                        _Progress.Report(new TaskProgress(String.Format("Sorting chunk {0:N0} ({1} - {2})...", chNum, ch.First().File.Name, ch.Last().File.Name), false, taskKey));
+                        this.WriteStats("Sorting chunk {0:N0} with {3:N0} files ({1} - {2}: {4:N1}MB, {5:N0} lines)...", chNum, ch.First().File.Name, ch.Last().File.Name, ch.Count(), ch.Sum(x => x.File.Length) / oneMbAsDouble, ch.Sum(x => x.Lines));
 
                         // Wait until work has been written to disk.
                         // In case of very slow disks (eg: USB2 / 10Mb ethernet) we can sort faster than we can write.
                         // With enough files, this can exhaust virtual memory.
+                        // We also need to schedule each chunk in order, because if we get out sync by too many, we can deadlock.
                         var waitSw = Stopwatch.StartNew();
                         workLimiter.WaitOne();
                         waitSw.Stop();
@@ -765,7 +775,7 @@ namespace MurrayGrant.MassiveSort.Actions
 
                         return new {
                             ch, 
-                            chNum = chNum + 1,
+                            chNum,
                             data,
                             comparer,
                             taskKey,
@@ -809,11 +819,11 @@ namespace MurrayGrant.MassiveSort.Actions
             this.WriteStats("Finished sorting in {0}. {1:N0} lines remain, {2:N0} duplicates removed.", allSw.Elapsed.ToSizedString(), totalLinesWritten, duplicatesRemoved);
         }
 
-        private IEnumerable<IEnumerable<FileResult>> SplitIntoChunksForBulkSorting(IEnumerable<FileResult> toSort)
+        private IList<IEnumerable<FileResult>> SplitIntoChunksForBulkSorting(IEnumerable<FileResult> toSort)
         {
             var sw = Stopwatch.StartNew();
             var cumulativeSize = 0L;
-            var sortChunks = new List<List<FileResult>>();
+            var sortChunks = new List<IEnumerable<FileResult>>();
             var chunk = new List<FileResult>();
             foreach (var fi in toSort)
             {
