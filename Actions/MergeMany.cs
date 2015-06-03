@@ -109,7 +109,7 @@ namespace MurrayGrant.MassiveSort.Actions
 
         /// <summary>
         /// The maximum number of chunks which can be sorted, but not yet written to disk.
-        /// Max is determined by available virtual memory. Default is 10 (which requires less than 2GB page file with default settings).
+        /// Max is determined by available virtual memory. Default is 10 (which requires ~2GB page file with default settings).
         /// </summary>
         [Option("max-outstanding-sorted-chunks")]
         public int MaxOutstandingSortedChunks { get; set; }
@@ -177,7 +177,6 @@ namespace MurrayGrant.MassiveSort.Actions
         /// <summary>
         /// Bytes which are considered whitespace.
         /// Default: 0x09, 0x0b, 0x20
-        /// Note that little endian unicode is supported (the previous 0x00 nul is also removed).
         /// https://en.wikipedia.org/wiki/Whitespace_character
         /// </summary>
         [Option("whitespace-chars")]
@@ -525,7 +524,10 @@ namespace MurrayGrant.MassiveSort.Actions
             long buffersRead = 0;
             long extraSeeks = 0;
             var lineBuffer = new byte[_Conf.LineBufferSize];
+            var extraBuffer = new byte[_Conf.LineBufferSize];       // For additional processing which requires a copy of data.
             bool shardWithLock = (shardSize == 1 && _ParallelOptsForConfiguredDegreeOfParallelism.MaxDegreeOfParallelism > 1);
+            bool trimWhitespace = (_Conf.Whitespace == MergeConf.WhitespaceOptions.Trim);
+            bool stripWhitespace = (_Conf.Whitespace == MergeConf.WhitespaceOptions.Strip);
 
             _Progress.Report(new TaskProgress(String.Format("Splitting '{0}'...", fi.Name), false, taskKey));
             var sw = Stopwatch.StartNew();
@@ -540,15 +542,32 @@ namespace MurrayGrant.MassiveSort.Actions
                     buffersRead++;
                     int idx = 0;
                     OffsetAndLength ol;
+
+                    // Ensure an empty string is written if present in the buffer.
+                    // TODO: the way ReadLineBuffer() is implemented, the last buffer will always contain an empty string.
+                    if (BufferContainsEmptyString(lineBuffer))
+                    {
+                        linesRead++;
+                        if (shardWithLock)
+                            ShardWordToFileWithStreamLock(lineBuffer, OffsetAndLength.Empty, shardSize, shardFiles, lineCounts);
+                        else
+                            ShardWordToFileWithoutLock(lineBuffer, OffsetAndLength.Empty, shardSize, shardFiles, lineCounts);
+                    }
+
                     do
                     {
-                        // TODO: the way NextWord() is implemented will never return an empty string.
                         // Find the next word.
                         // PERF: about 30% of CPU time is spent in NextWord().
                         ol = NextWord(lineBuffer, idx);
                         
                         if (ol.Length >= 0 && ol.Offset >= 0)
                         {
+                            // Additional processing happens here.
+                            // Convert to $HEX before trimming, as any removal of whitespace will break unicode (UTF-16) encoded strings.
+                            if (trimWhitespace)
+                                ol = this.TrimWhitespace(lineBuffer, ol, _Conf.WhitespaceChars);
+
+
                             // Write the word to the shard file.
                             // PERF: about 40% of CPU time is spent in FileStream.Write(), contained in ShardWordToFile().
                             linesRead++;
@@ -616,14 +635,16 @@ namespace MurrayGrant.MassiveSort.Actions
             {
                 lock(stream)
                 {
-                    stream.Write(buf, word.Offset, word.Length);
+                    if (word.Length > 0)
+                        stream.Write(buf, word.Offset, word.Length);
                     stream.WriteByte(newlineByte);
                     lineCounts[shard] = lineCounts[shard] + 1;
                 }
             }
             else
             {
-                stream.Write(buf, word.Offset, word.Length);
+                if (word.Length > 0)
+                    stream.Write(buf, word.Offset, word.Length);
                 stream.WriteByte(newlineByte);
                 lineCounts[shard] = lineCounts[shard] + 1;
             }
@@ -649,7 +670,8 @@ namespace MurrayGrant.MassiveSort.Actions
 #endif
             // Write the line to the file.
             var stream = shardFiles[shard];
-            stream.Write(buf, word.Offset, word.Length);
+            if (word.Length > 0)
+                stream.Write(buf, word.Offset, word.Length);
             stream.WriteByte(newlineByte);
             lineCounts[shard] = lineCounts[shard] + 1;
         }
@@ -677,7 +699,8 @@ namespace MurrayGrant.MassiveSort.Actions
             var stream = shardFiles[shard];
             lock (stream)
             {
-                stream.Write(buf, word.Offset, word.Length);
+                if (word.Length > 0)
+                    stream.Write(buf, word.Offset, word.Length);
                 stream.WriteByte(newlineByte);
                 lineCounts[shard] = lineCounts[shard] + 1;
             }
@@ -745,6 +768,50 @@ namespace MurrayGrant.MassiveSort.Actions
                     return i;
             }
             return -1;
+        }
+
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+        private bool BufferContainsEmptyString(byte[] buf)
+        {
+            for (int i = 1; i < buf.Length; i++)
+            {
+                if ((buf[i-1] == newline1 || buf[i-1] == newline2)
+                    && (buf[i] == newline1 || buf[i] == newline2))
+                    return true;
+            }
+            return false;
+        }
+
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+        private OffsetAndLength TrimWhitespace(byte[] buf, OffsetAndLength ol, byte[] whitespaceChars)
+        {
+            // Skip over any whitespace at the start.
+            int newOffset = ol.Offset;
+            for (int i = ol.Offset; i < buf.Length; i++)
+            {
+                bool isWhitespace = false;
+                for (int j = 0; j < whitespaceChars.Length; j++)
+			        isWhitespace = isWhitespace | (buf[i] == whitespaceChars[j]);
+                if (isWhitespace)
+                    newOffset = i;
+                else
+                    break;
+            }
+
+            // Skip over any whitespace at the end.
+            int newLength = ol.Length - (newOffset - ol.Offset);
+            for (int i = ol.Offset + ol.Length - 1; i >= newOffset ; i--)
+			{
+                bool isWhitespace = false;
+                for (int j = 0; j < whitespaceChars.Length; j++)
+                    isWhitespace = isWhitespace | (buf[i] == whitespaceChars[j]);
+                if (isWhitespace)
+                    newLength = (i - newOffset);
+                else
+                    break;
+			}
+
+            return new OffsetAndLength(newOffset, newLength);
         }
         #endregion
 
@@ -987,13 +1054,13 @@ namespace MurrayGrant.MassiveSort.Actions
             var offsets = data.LineOffsets;
             Func<int, OffsetAndLength, OffsetAndLength, bool> writeWordPredicate = (idx, c, p) => true;
             if (!_Conf.LeaveDuplicates)
-                writeWordPredicate = (idx, c, p) => idx > 0 && !comparer.Equals(c, p);
+                writeWordPredicate = (idx, c, p) => idx == 0 || idx > 0 && !comparer.Equals(c, p);
 
             OffsetAndLength previous = OffsetAndLength.Empty;
             for (int i = 0; i < offsets.Length; i++)
             {
                 var current = offsets[i];
-                if (writeWordPredicate(offsets.Length, current, previous))
+                if (writeWordPredicate(i, current, previous))
                 {
                     output.Write(chunkData, current.Offset, current.Length);
                     output.WriteByte(newlineByte);
