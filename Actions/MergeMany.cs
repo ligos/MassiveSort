@@ -523,6 +523,7 @@ namespace MurrayGrant.MassiveSort.Actions
             long buffersSkipped = 0;
             long buffersRead = 0;
             long extraSeeks = 0;
+            int bytesInBuffer = 0;
             var lineBuffer = new byte[_Conf.LineBufferSize];
             var extraBuffer = new byte[_Conf.LineBufferSize];       // For additional processing which requires a copy of data.
             bool shardWithLock = (shardSize == 1 && _ParallelOptsForConfiguredDegreeOfParallelism.MaxDegreeOfParallelism > 1);
@@ -537,15 +538,14 @@ namespace MurrayGrant.MassiveSort.Actions
             {
                 // Read the file in buffer sized chunks.
                 // This is perf critical code.
-                while (ReadLineBuffer(stream, lineBuffer))
+                while ((bytesInBuffer = ReadLineBuffer(stream, lineBuffer)) > 0)
                 {
                     buffersRead++;
                     int idx = 0;
                     OffsetAndLength ol;
 
                     // Ensure an empty string is written if present in the buffer.
-                    // TODO: the way ReadLineBuffer() is implemented, the last buffer will always contain an empty string.
-                    if (BufferContainsEmptyString(lineBuffer))
+                    if (BufferContainsEmptyString(lineBuffer, bytesInBuffer))
                     {
                         linesRead++;
                         if (shardWithLock)
@@ -707,12 +707,12 @@ namespace MurrayGrant.MassiveSort.Actions
         }
 
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
-        private bool ReadLineBuffer(FileStream stream, byte[] buf)
+        private int ReadLineBuffer(FileStream stream, byte[] buf)
         {
             int bytesRead = stream.Read(buf, 0, buf.Length);
             if (bytesRead <= 0)
                 // End of file.
-                return false;
+                return 0;
 
             if (bytesRead < buf.Length)
             {
@@ -721,7 +721,7 @@ namespace MurrayGrant.MassiveSort.Actions
                 for (int i = bytesRead; i < buf.Length; i++)
                     buf[i] = newline1;
             }
-            return true;
+            return bytesRead;
         }
 
 
@@ -771,9 +771,9 @@ namespace MurrayGrant.MassiveSort.Actions
         }
 
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
-        private bool BufferContainsEmptyString(byte[] buf)
+        private bool BufferContainsEmptyString(byte[] buf, int len)
         {
-            for (int i = 1; i < buf.Length; i++)
+            for (int i = 1; i < len; i++)
             {
                 if ((buf[i-1] == newline1 || buf[i-1] == newline2)
                     && (buf[i] == newline1 || buf[i] == newline2))
@@ -1177,7 +1177,7 @@ namespace MurrayGrant.MassiveSort.Actions
             {
                 Console.WriteLine();
                 Console.WriteLine("Warning: {0:N1}MB of old working files remain in '{1}'.", tempFiles.Sum(x => x.Length) / oneMbAsDouble, tempBase.FullName);
-                Console.WriteLine("Use the 'clean' verb to remove them.");
+                Console.WriteLine("Use the 'cleantemp' verb to remove them.");
                 Console.WriteLine();
             }
         }
