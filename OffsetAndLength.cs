@@ -47,6 +47,15 @@ namespace MurrayGrant.MassiveSort
         {
             return this.Offset == other.Offset & this.Length == other.Length;
         }
+        public static bool operator== (OffsetAndLength ol1, OffsetAndLength ol2)
+        {
+            return ol1.Equals(ol2);
+        }
+        public static bool operator!= (OffsetAndLength ol1, OffsetAndLength ol2)
+        {
+            return !ol1.Equals(ol2);
+        }
+
         public override int GetHashCode()
         {
             return typeof(OffsetAndLength).GetHashCode()

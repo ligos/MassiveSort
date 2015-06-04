@@ -523,9 +523,12 @@ namespace MurrayGrant.MassiveSort.Actions
             long buffersSkipped = 0;
             long buffersRead = 0;
             long extraSeeks = 0;
+            long linesTrimmed = 0;
+            long linesStripped = 0;
             int bytesInBuffer = 0;
             var lineBuffer = new byte[_Conf.LineBufferSize];
             var extraBuffer = new byte[_Conf.LineBufferSize];       // For additional processing which requires a copy of data.
+            bool emptyStringFound = false;
             bool shardWithLock = (shardSize == 1 && _ParallelOptsForConfiguredDegreeOfParallelism.MaxDegreeOfParallelism > 1);
             bool trimWhitespace = (_Conf.Whitespace == MergeConf.WhitespaceOptions.Trim);
             bool stripWhitespace = (_Conf.Whitespace == MergeConf.WhitespaceOptions.Strip);
@@ -545,13 +548,13 @@ namespace MurrayGrant.MassiveSort.Actions
                     OffsetAndLength ol;
 
                     // Ensure an empty string is written if present in the buffer.
-                    if (BufferContainsEmptyString(lineBuffer, bytesInBuffer))
+                    if (!emptyStringFound && BufferContainsEmptyString(lineBuffer, bytesInBuffer))
                     {
                         linesRead++;
                         if (shardWithLock)
-                            ShardWordToFileWithStreamLock(lineBuffer, OffsetAndLength.Empty, shardSize, shardFiles, lineCounts);
+                            ShardWordToFileWithStreamLock(new ArraySegment<byte>(), shardSize, shardFiles, lineCounts);
                         else
-                            ShardWordToFileWithoutLock(lineBuffer, OffsetAndLength.Empty, shardSize, shardFiles, lineCounts);
+                            ShardWordToFileWithoutLock(new ArraySegment<byte>(), shardSize, shardFiles, lineCounts);
                     }
 
                     do
@@ -559,22 +562,36 @@ namespace MurrayGrant.MassiveSort.Actions
                         // Find the next word.
                         // PERF: about 30% of CPU time is spent in NextWord().
                         ol = NextWord(lineBuffer, idx);
-                        
+
                         if (ol.Length >= 0 && ol.Offset >= 0)
                         {
                             // Additional processing happens here.
                             // Convert to $HEX before trimming, as any removal of whitespace will break unicode (UTF-16) encoded strings.
+                            var toWrite = new ArraySegment<byte>(lineBuffer, ol.Offset, ol.Length);
+
+                            // Trimming whitespace does not require a change to the buffer or any copying.
                             if (trimWhitespace)
-                                ol = this.TrimWhitespace(lineBuffer, ol, _Conf.WhitespaceChars);
+                            {
+                                var maybeChanged = this.TrimWhitespace(toWrite, _Conf.WhitespaceChars);
+                                if (toWrite != maybeChanged) linesTrimmed++;
+                                toWrite = maybeChanged;
+                            }
+                            // Stripping all whitespace may require a copy to the alternate buffer.
+                            if (stripWhitespace)
+                            {
+                                var maybeChanged = this.StripWhitespace(toWrite, extraBuffer, _Conf.WhitespaceChars);
+                                if (toWrite != maybeChanged) linesStripped++;
+                                toWrite = maybeChanged;
+                            }
 
 
                             // Write the word to the shard file.
                             // PERF: about 40% of CPU time is spent in FileStream.Write(), contained in ShardWordToFile().
                             linesRead++;
                             if (shardWithLock)
-                                ShardWordToFileWithStreamLock(lineBuffer, ol, shardSize, shardFiles, lineCounts);
+                                ShardWordToFileWithStreamLock(toWrite, shardSize, shardFiles, lineCounts);
                             else
-                                ShardWordToFileWithoutLock(lineBuffer, ol, shardSize, shardFiles, lineCounts);
+                                ShardWordToFileWithoutLock(toWrite, shardSize, shardFiles, lineCounts);
                             idx += ol.Length + 1;       // Assume at least one new line after the word.
                         }
                         else
@@ -605,92 +622,56 @@ namespace MurrayGrant.MassiveSort.Actions
             _Progress.Report(new TaskProgress(" Done.", true, taskKey));
             this.WriteStats("File '{0}': {1:N0} lines processed in {2:N1}ms, {3:N1} lines / sec, {4:N1} MB / sec.", fi.Name, linesRead, sw.Elapsed.TotalMilliseconds, linesRead / sw.Elapsed.TotalSeconds, (fi.Length / oneMbAsDouble) / sw.Elapsed.TotalSeconds);
             this.WriteStats("File '{0}': {1:N0} line buffers read, {2:N0} line buffers skipped because lines were too long, {3:N0} additional seeks due to buffer alignment.", fi.Name, buffersRead, buffersSkipped, extraSeeks);
+            if (trimWhitespace)
+                this.WriteStats("File '{0}': {1:N0} lines had whitespace trimmed.", fi.Name, linesTrimmed);
+            if (stripWhitespace)
+                this.WriteStats("File '{0}': {1:N0} lines had whitespace stripped.", fi.Name, linesStripped);
 
             return linesRead;
         }
 
 
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
-        private void ShardWordToFile(byte[] buf, OffsetAndLength word, int shardSize, FileStream[] shardFiles, long[] lineCounts)
+        private void ShardWordToFileWithoutLock(ArraySegment<byte> seg, int shardSize, FileStream[] shardFiles, long[] lineCounts)
         {
             // Determine the first character(s) to shard into separate files.
             int shard;
-            if (shardSize > word.Length)
+            if (shardSize > seg.Count)
                 shard = shardFiles.Length - 1;     // Empty string / no shard.
             else
-                shard = buf[word.Offset + (shardSize - 1)];
+                shard = seg.Array[seg.Offset + (shardSize - 1)];
 
 #if DEBUG
             if (System.Diagnostics.Debugger.IsAttached)
             {
-                var wordAsBytes = buf.Skip(word.Offset).Take(word.Length).ToArray();
+                var wordAsBytes = seg.Array.Skip(seg.Offset).Take(seg.Count).ToArray();
                 var wordAsNativeString = Encoding.Default.GetString(wordAsBytes);
                 var wordAsUtf8String = Encoding.UTF8.GetString(wordAsBytes);
             }
 #endif
             // Write the line to the file.
             var stream = shardFiles[shard];
-            bool shardWithLock = (shardSize == 1 && _ParallelOptsForConfiguredDegreeOfParallelism.MaxDegreeOfParallelism > 1);
-            if (shardWithLock)
-            {
-                lock(stream)
-                {
-                    if (word.Length > 0)
-                        stream.Write(buf, word.Offset, word.Length);
-                    stream.WriteByte(newlineByte);
-                    lineCounts[shard] = lineCounts[shard] + 1;
-                }
-            }
-            else
-            {
-                if (word.Length > 0)
-                    stream.Write(buf, word.Offset, word.Length);
-                stream.WriteByte(newlineByte);
-                lineCounts[shard] = lineCounts[shard] + 1;
-            }
-        }
-
-        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
-        private void ShardWordToFileWithoutLock(byte[] buf, OffsetAndLength word, int shardSize, FileStream[] shardFiles, long[] lineCounts)
-        {
-            // Determine the first character(s) to shard into separate files.
-            int shard;
-            if (shardSize > word.Length)
-                shard = shardFiles.Length - 1;     // Empty string / no shard.
-            else
-                shard = buf[word.Offset + (shardSize - 1)];
-
-#if DEBUG
-            if (System.Diagnostics.Debugger.IsAttached)
-            {
-                var wordAsBytes = buf.Skip(word.Offset).Take(word.Length).ToArray();
-                var wordAsNativeString = Encoding.Default.GetString(wordAsBytes);
-                var wordAsUtf8String = Encoding.UTF8.GetString(wordAsBytes);
-            }
-#endif
-            // Write the line to the file.
-            var stream = shardFiles[shard];
-            if (word.Length > 0)
-                stream.Write(buf, word.Offset, word.Length);
+            if (seg.Count > 0)
+                stream.Write(seg.Array, seg.Offset, seg.Count);
             stream.WriteByte(newlineByte);
             lineCounts[shard] = lineCounts[shard] + 1;
         }
 
-        private void ShardWordToFileWithStreamLock(byte[] buf, OffsetAndLength word, int shardSize, FileStream[] shardFiles, long[] lineCounts)
+        private void ShardWordToFileWithStreamLock(ArraySegment<byte> seg, int shardSize, FileStream[] shardFiles, long[] lineCounts)
         {
             // The lock makes it highly unlikely to inline this function call, hence why the code is mostly duplicated.
 
             // Determine the first character(s) to shard into separate files.
             int shard;
-            if (shardSize > word.Length)
+            if (shardSize > seg.Count)
                 shard = shardFiles.Length - 1;     // Empty string / no shard.
             else
-                shard = buf[word.Offset + (shardSize - 1)];
+                shard = seg.Array[seg.Offset + (shardSize - 1)];
 
 #if DEBUG
             if (System.Diagnostics.Debugger.IsAttached)
             {
-                var wordAsBytes = buf.Skip(word.Offset).Take(word.Length).ToArray();
+                var wordAsBytes = seg.Array.Skip(seg.Offset).Take(seg.Count).ToArray();
                 var wordAsNativeString = Encoding.Default.GetString(wordAsBytes);
                 var wordAsUtf8String = Encoding.UTF8.GetString(wordAsBytes);
             }
@@ -699,8 +680,8 @@ namespace MurrayGrant.MassiveSort.Actions
             var stream = shardFiles[shard];
             lock (stream)
             {
-                if (word.Length > 0)
-                    stream.Write(buf, word.Offset, word.Length);
+                if (seg.Count > 0)
+                    stream.Write(seg.Array, seg.Offset, seg.Count);
                 stream.WriteByte(newlineByte);
                 lineCounts[shard] = lineCounts[shard] + 1;
             }
@@ -782,16 +763,15 @@ namespace MurrayGrant.MassiveSort.Actions
             return false;
         }
 
-        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
-        private OffsetAndLength TrimWhitespace(byte[] buf, OffsetAndLength ol, byte[] whitespaceChars)
+        private ArraySegment<byte> TrimWhitespace(ArraySegment<byte> seg, byte[] whitespaceChars)
         {
             // Skip over any whitespace at the start.
-            int newOffset = ol.Offset;
-            for (int i = ol.Offset; i < buf.Length; i++)
+            int newOffset = seg.Offset;
+            for (int i = seg.Offset; i < seg.Offset + seg.Count; i++)
             {
                 bool isWhitespace = false;
                 for (int j = 0; j < whitespaceChars.Length; j++)
-			        isWhitespace = isWhitespace | (buf[i] == whitespaceChars[j]);
+			        isWhitespace = isWhitespace | (seg.Array[i] == whitespaceChars[j]);
                 if (isWhitespace)
                     newOffset = i;
                 else
@@ -799,19 +779,49 @@ namespace MurrayGrant.MassiveSort.Actions
             }
 
             // Skip over any whitespace at the end.
-            int newLength = ol.Length - (newOffset - ol.Offset);
-            for (int i = ol.Offset + ol.Length - 1; i >= newOffset ; i--)
+            int newLength = seg.Count - (newOffset - seg.Offset);
+            for (int i = seg.Offset + seg.Count - 1; i >= newOffset ; i--)
 			{
                 bool isWhitespace = false;
                 for (int j = 0; j < whitespaceChars.Length; j++)
-                    isWhitespace = isWhitespace | (buf[i] == whitespaceChars[j]);
+                    isWhitespace = isWhitespace | (seg.Array[i] == whitespaceChars[j]);
                 if (isWhitespace)
                     newLength = (i - newOffset);
                 else
                     break;
 			}
+            
+            return new ArraySegment<byte>(seg.Array, newOffset, newLength);
+        }
+        private ArraySegment<byte> StripWhitespace(ArraySegment<byte> seg, byte[] otherBuf, byte[] whitespaceChars)
+        {
+            // Search for whitespace.
+            bool hasWhitespace = false;
+            for (int i = seg.Offset; i < seg.Offset + seg.Count; i++)
+            {
+                for (int j = 0; j < whitespaceChars.Length; j++)
+                    hasWhitespace = hasWhitespace | (seg.Array[i] == whitespaceChars[j]);
+                if (hasWhitespace)
+                    break;
+            }
+            if (!hasWhitespace)
+                // No whitespace found: return the original segment untouched.
+                return seg;
 
-            return new OffsetAndLength(newOffset, newLength);
+            // Make a copy into the other buffer, but skip any whitespace.
+            int oBufIdx = 0;
+            for (int i = seg.Offset; i < seg.Offset + seg.Count; i++)
+            {
+                bool isWhitespace = false;
+                for (int j = 0; j < whitespaceChars.Length; j++)
+                    isWhitespace = isWhitespace | (seg.Array[i] == whitespaceChars[j]);
+                if (!isWhitespace)
+                {
+                    otherBuf[oBufIdx] = seg.Array[i];
+                    oBufIdx++;
+                }
+            }
+            return new ArraySegment<byte>(otherBuf, 0, oBufIdx);
         }
         #endregion
 
@@ -1114,7 +1124,7 @@ namespace MurrayGrant.MassiveSort.Actions
                 return;
 
             // During the phase 1 read (splitting / sharding), the max memory usage is:
-            var estForSplitPerWorker = _Conf.ReadBufferSize + _Conf.LineBufferSize + (257 * _Conf.TempFileBufferSize);      // 257 is the number of files open - 256 for a byte of sharding, plus one empty shard.
+            var estForSplitPerWorker = _Conf.ReadBufferSize + _Conf.LineBufferSize + _Conf.LineBufferSize + (257 * _Conf.TempFileBufferSize);      // 257 is the number of files open - 256 for a byte of sharding, plus one empty shard.
             var estForSortPerWorker = _Conf.OutputBufferSize        // Output file buffer
                                     + _Conf.MaxSortSize             // Sorting buffer
                                     + (_Conf.MaxSortSize / 9 * System.Runtime.InteropServices.Marshal.SizeOf(typeof(OffsetAndLength)))    // Index into sort buffer. 9 is a conservative guess at the average line length.
