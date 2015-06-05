@@ -139,6 +139,12 @@ namespace MurrayGrant.MassiveSort
             }
         }
 
+        private static readonly byte[] HexByteTable = new string[] { "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "a", "b", "c", "d", "e", "f" }.Select(ch => Encoding.ASCII.GetBytes(ch).First()).ToArray();
+        public static void WriteHexToArray(byte[] buf, int idx, byte toWrite)
+        {
+            buf[idx] = HexByteTable[(toWrite & 0x000000f0) >> 4];
+            buf[idx+1] = HexByteTable[(toWrite & 0x0000000f)];
+        }
 
         public static IEnumerable<T> DistinctWhenSorted<T>(this OrderedParallelQuery<T> collection, IEqualityComparer<T> comparer)
         {

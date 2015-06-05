@@ -265,6 +265,8 @@ namespace MurrayGrant.MassiveSort.Actions
         private const byte newline2 = (byte)'\r';
         private readonly double oneMbAsDouble = Helpers.OneMbAsDouble;
         private static string emptyShardFilename = "!";
+        private static readonly byte[] _DollarHexPrefix = Encoding.ASCII.GetBytes("$HEX[");
+        private static readonly byte _DollarHexSuffix = Encoding.ASCII.GetBytes("]").First();
 
         private readonly MergeConf _Conf;
         private ParallelOptions _ParallelOptsForConfiguredDegreeOfParallelism;
@@ -525,13 +527,17 @@ namespace MurrayGrant.MassiveSort.Actions
             long extraSeeks = 0;
             long linesTrimmed = 0;
             long linesStripped = 0;
+            long linesConvertedToDollarHex = 0;
             int bytesInBuffer = 0;
             var lineBuffer = new byte[_Conf.LineBufferSize];
-            var extraBuffer = new byte[_Conf.LineBufferSize];       // For additional processing which requires a copy of data.
+            // For additional processing which requires a copy of data.
+            // The allocation size allow us to convert a full line buffer to $HEX[...] format.
+            var extraBuffer = new byte[_Conf.LineBufferSize * 2 + _DollarHexPrefix.Length + 1];       
             bool emptyStringFound = false;
             bool shardWithLock = (shardSize == 1 && _ParallelOptsForConfiguredDegreeOfParallelism.MaxDegreeOfParallelism > 1);
             bool trimWhitespace = (_Conf.Whitespace == MergeConf.WhitespaceOptions.Trim);
             bool stripWhitespace = (_Conf.Whitespace == MergeConf.WhitespaceOptions.Strip);
+            bool convertToDollarHex = _Conf.ConvertToDollarHex;
 
             _Progress.Report(new TaskProgress(String.Format("Splitting '{0}'...", fi.Name), false, taskKey));
             var sw = Stopwatch.StartNew();
@@ -566,9 +572,18 @@ namespace MurrayGrant.MassiveSort.Actions
                         if (ol.Length >= 0 && ol.Offset >= 0)
                         {
                             // Additional processing happens here.
-                            // Convert to $HEX before trimming, as any removal of whitespace will break unicode (UTF-16) encoded strings.
                             var toWrite = new ArraySegment<byte>(lineBuffer, ol.Offset, ol.Length);
 
+                            // The order of these means only one will ever be triggered.
+                            // The code, as it stands, will not cope with two copies of the line (the copies will overwrite each other on the 2nd call).
+
+                            // Convert to $HEX before trimming, as any removal of whitespace will break unicode (UTF-16) encoded strings.
+                            if (convertToDollarHex)
+                            {
+                                var maybeChanged = this.ConvertToDollarHex(toWrite, extraBuffer);
+                                if (toWrite != maybeChanged) linesConvertedToDollarHex++;
+                                toWrite = maybeChanged;
+                            }
                             // Trimming whitespace does not require a change to the buffer or any copying.
                             if (trimWhitespace)
                             {
@@ -626,6 +641,8 @@ namespace MurrayGrant.MassiveSort.Actions
                 this.WriteStats("File '{0}': {1:N0} lines had whitespace trimmed.", fi.Name, linesTrimmed);
             if (stripWhitespace)
                 this.WriteStats("File '{0}': {1:N0} lines had whitespace stripped.", fi.Name, linesStripped);
+            if (convertToDollarHex)
+                this.WriteStats("File '{0}': {1:N0} lines were converted to $HEX[].", fi.Name, linesConvertedToDollarHex);
 
             return linesRead;
         }
@@ -821,6 +838,39 @@ namespace MurrayGrant.MassiveSort.Actions
                     oBufIdx++;
                 }
             }
+            return new ArraySegment<byte>(otherBuf, 0, oBufIdx);
+        }
+        private ArraySegment<byte> ConvertToDollarHex(ArraySegment<byte> seg, byte[] otherBuf)
+        {
+            // The best definition of the $HEX[] convention is in Waffle's hashcat proposal: https://hashcat.net/trac/ticket/148
+
+            // Check for the presence of "special" bytes.
+            // That is, control bytes in the range 0x00 - 0x1f and 0x7f - 0xff.
+            bool convert = false;
+            for (int i = seg.Offset; i < seg.Offset + seg.Count; i++)
+            {
+                if (seg.Array[i] < 0x20 || seg.Array[i] > 0x7e)
+                {
+                    convert = true;
+                    break;
+                }
+            }
+            if (!convert)
+                // No special bytes found: return the original segment untouched.
+                return seg;
+
+            // Make a copy into the other buffer, converting to hex.
+            int oBufIdx = 0;
+            // $HEX[ prefix.
+            for (int i = 0; i < _DollarHexPrefix.Length; oBufIdx++, i++)
+                otherBuf[oBufIdx] = _DollarHexPrefix[i];
+            // Actual data.
+            for (int i = seg.Offset; i < seg.Offset + seg.Count; oBufIdx += 2, i++)
+                Helpers.WriteHexToArray(otherBuf, oBufIdx, seg.Array[i]);
+            // ] suffix.
+            otherBuf[oBufIdx] = _DollarHexSuffix;
+            oBufIdx++;
+
             return new ArraySegment<byte>(otherBuf, 0, oBufIdx);
         }
         #endregion
@@ -1124,7 +1174,7 @@ namespace MurrayGrant.MassiveSort.Actions
                 return;
 
             // During the phase 1 read (splitting / sharding), the max memory usage is:
-            var estForSplitPerWorker = _Conf.ReadBufferSize + _Conf.LineBufferSize + _Conf.LineBufferSize + (257 * _Conf.TempFileBufferSize);      // 257 is the number of files open - 256 for a byte of sharding, plus one empty shard.
+            var estForSplitPerWorker = (_Conf.ReadBufferSize * 3) + (257 * _Conf.TempFileBufferSize);      // 257 is the number of files open - 256 for a byte of sharding, plus one empty shard.
             var estForSortPerWorker = _Conf.OutputBufferSize        // Output file buffer
                                     + _Conf.MaxSortSize             // Sorting buffer
                                     + (_Conf.MaxSortSize / 9 * System.Runtime.InteropServices.Marshal.SizeOf(typeof(OffsetAndLength)))    // Index into sort buffer. 9 is a conservative guess at the average line length.
