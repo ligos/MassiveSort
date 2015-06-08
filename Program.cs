@@ -31,43 +31,67 @@ namespace MurrayGrant.MassiveSort
         {
             var conf = new Conf();
             var verbSelected = "";
-            if (!CommandLine.Parser.Default.ParseArguments(args, conf, (v, o) =>
+            bool helpRequested = false;
+            var parseSucceeded = CommandLine.Parser.Default.ParseArguments(args, conf, (v, o) =>
             {
-                verbSelected = v;
-            }))
-            {
-                Console.WriteLine("Error when parsing arguments.");
-                PrintUsage(verbSelected);
-                return 1;
-            }
-            if (String.IsNullOrEmpty(verbSelected))
-            {
-                Console.WriteLine("You must select a verb.");
-                PrintUsage("");
-                return 1;
-            }
+                verbSelected = v ?? "";
+                if (String.Equals(verbSelected, "help", StringComparison.CurrentCultureIgnoreCase))
+                    helpRequested = true;
+                else if (conf != null)
+                    helpRequested = conf.HelpWasRequested;
+            });
+            
 
             // Based on command line verb, determine what we will do.
-            ICmdVerb action;
-            switch(verbSelected.ToLower())
-            {
-                case "merge":
-                    action = new MergeMany(conf.MergeOptions.ExtraParsing());
-                    break;
-                case "cleantemp":
-                    action = new CleanTemp(conf.CleanTempOptions);
-                    break;
-                default:
-                    Console.WriteLine("Unknown verb '{0}'.", verbSelected);
-                    PrintUsage("");
-                    return 1;
-            }
+            ICmdVerb action = null;
+            string usageText = null;
+            string errorText = null;
+            if (!parseSucceeded)
+                errorText = "Error: Unable to parse arguments.";
+
+            var verb = verbSelected.ToLower();
+            if (parseSucceeded && verb == "merge") 
+                action = new MergeMany(conf.MergeOptions.ExtraParsing());
+            else if (!parseSucceeded && verb == "merge")
+                usageText = MergeConf.GetUsageText();
+            else if (parseSucceeded && verb == "cleantemp")
+                action = new CleanTemp(conf.CleanTempOptions);
+            else if (!parseSucceeded && verb == "cleantemp")
+                usageText = CleanTempConf.GetUsageText();
+            else if (verb == "help" && args.Length == 1) {
+                errorText = "Here's some help:";
+                usageText = Conf.GetUsageText();
+            } else if (verb == "help" && args.Length == 2) {
+                errorText = "";
+                usageText = GetHelpMessageForVerb(args[1]);
+            } else if (!parseSucceeded && String.IsNullOrEmpty(verbSelected)) {
+                errorText = "Error: You must select a verb.";
+                usageText = Conf.GetUsageText();
+            } else if (!parseSucceeded) {
+                errorText = "Error: Unknown verb - " + verbSelected;
+                usageText = Conf.GetUsageText();
             
+            } else if (parseSucceeded)
+                throw new Exception("Unknown verb: " + verbSelected);
+            else
+                throw new Exception("Unexpected state.");
+           
+
             // Check all is OK.
-            if (!action.IsValid())
+            if (parseSucceeded && action != null && !action.IsValid())
             {
-                Console.WriteLine(action.GetValidationError());
-                PrintUsage(verbSelected);
+                errorText = "Error: " + action.GetValidationError();
+                usageText = action.GetUsageMessage();
+            }
+
+            if (!parseSucceeded || !String.IsNullOrEmpty(errorText) || helpRequested)
+            {
+                // Failure case.
+                Console.WriteLine();
+                if (!helpRequested)
+                    Console.WriteLine(errorText);
+                Console.WriteLine(usageText);
+                
                 return 1;
             }
 
@@ -95,11 +119,19 @@ namespace MurrayGrant.MassiveSort
             return 0;
         }
 
-
-
-        private static void PrintUsage(string forVerb)
+        private static string GetHelpMessageForVerb(string v)
         {
-            Console.WriteLine("Usage....");
+            var verb = (v ?? "").ToLower();
+            switch (verb)
+            {
+                case "merge":
+                    return MergeConf.GetUsageText();
+                case "cleantemp":
+                    return CleanTempConf.GetUsageText();
+                default:
+                    return "Unknown verb: " + v + "\n" + Conf.GetUsageText();
+            }
         }
+
     }
 }

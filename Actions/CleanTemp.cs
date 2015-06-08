@@ -28,6 +28,14 @@ namespace MurrayGrant.MassiveSort.Actions
     {
         [Option('t', "temp-folder")]
         public string TempFolder { get; set; }
+
+        public static string GetUsageText()
+        {
+            return Conf.FirstUsageLineText + @"
+-t --temp-folder    Folder to search for temporary files. 
+                    Default: %TEMP%\MassiveSort  
+";
+        }
     }
 
     public class CleanTemp : ICmdVerb
@@ -38,6 +46,11 @@ namespace MurrayGrant.MassiveSort.Actions
         public CleanTemp(CleanTempConf conf)
         {
             _Conf = conf;
+        }
+
+        public string GetUsageMessage()
+        {
+            return CleanTempConf.GetUsageText();
         }
 
         public bool IsValid()

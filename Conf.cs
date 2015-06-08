@@ -27,6 +27,7 @@ namespace MurrayGrant.MassiveSort
     {
         bool IsValid();
         string GetValidationError();
+        string GetUsageMessage();
 
         void Do();
     }
@@ -41,17 +42,39 @@ namespace MurrayGrant.MassiveSort
         public MurrayGrant.MassiveSort.Actions.MergeConf MergeOptions { get; set; }
         [VerbOption("cleantemp")]
         public MurrayGrant.MassiveSort.Actions.CleanTempConf CleanTempOptions { get; set; }
-
+    
+        public bool HelpWasRequested 
+        { 
+            get {
+                return (this.MergeOptions != null && this.MergeOptions.Help)
+                    || (this.CleanTempOptions != null && this.CleanTempOptions.Help);
+            } 
+        }
 
         [HelpVerbOption()]
         public string GetUsage(string verb)
         {
-            return CommandLine.Text.HelpText.AutoBuild(this, verb);
+            // Without this, the command line parser throws a null ref exception.
+            return "";
         }
+        public static readonly string FirstUsageLineText = "  Usage: MassiveSort <verb> <arguments> [options]\n";
+        public static string GetUsageText()
+        {
+            return FirstUsageLineText + @"
+merge        Merges and sorts one or more files to a new copy
+cleanTemp    Cleans unused files from temporary folders                    
+help         Gets help on a verb, or shows this list                    
+";
+        }
+        
     }
 
     public abstract class CommonConf
     {
+        [Option('?', "help")]
+        public bool Help { get; set; }
+
+
         [Option("debug")]
         public bool Debug { get; set; }
     }

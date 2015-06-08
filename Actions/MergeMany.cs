@@ -57,6 +57,67 @@ namespace MurrayGrant.MassiveSort.Actions
             this.ConvertToDollarHex = false;                // Do not convert to $HEX[...] format by default.
         }
 
+        public static string GetUsageText()
+        {
+            return Conf.FirstUsageLineText + @"
+    Required Inputs / Outputs
+-i --input    One or more files or folders to sort
+-o --output   A file to write the output to
+  
+-t --temp-folder   Folder to use for writing temporary files
+                   Default: %TEMP%\MassiveSort\<PID>
+ 
+    Options
+--leave-duplicates Leave duplicates in the output file
+                   Default: remove duplicates
+--convert-to-dollar-hex
+                   Converts non-ascii bytes to $HEX[] format
+                   Default: make no changes to non-ascii bytes
+--save-stats       Saves more detailed stats to .stats file.
+--whitespace       Changes made to whitespace when processing
+                   WARNING: this can make destructive changes to your inputs
+                   - NoChange: no changes to whitespace (default)
+                   - Trim: removes leading and trailing whitespace
+                   - Strip: removes all whitespace
+--whitespace-chars Byte(s) considered whitespace
+                   Default: 0x09, 0x0b, 0x20
+
+
+    Sorting
+--max-sort-size    Largest chunk of files to sort as a group
+                   Default: 64MB, major contributor to memory usage
+--sort-algorithm   Sort agorithm to use, options:
+                   - DefaultArray: Array.Sort()
+                   - LinqOrderBy: Enumerable.OrderBy()
+                   - TimSort: Timsort algorithm (default)
+
+    Workers / Threads
+-w --workers       Number of worker threads
+                   Default: number of physical cores in your PC
+--io-workers       Number of worker threads for IO intensive operations
+                   Default: 8 workers
+
+
+    Buffers
+--line-buffer-size Buffer size for reading lines
+                   Default: 64KB
+--read-file-buffer-size 
+                   Buffer size for input file
+                   Default: 64KB
+--temp-file-buffer-size 
+                   Buffer size for writing temp files
+                   Default: 128KB
+--output-file-buffer-size 
+                   Buffer size for writing output file
+                   Default: 256KB
+--max-outstanding-sorted-chunks
+                   Number of chunks to buffer in memory when writing
+                   Default: 10, major contributor to memory usage
+--aggressive-memory-collection 
+                   Does a full garbage collection after each file processed
+";
+        }
+
         [OptionArray('i', "input")]
         public string[] Inputs { get; set; }
 
@@ -279,6 +340,11 @@ namespace MurrayGrant.MassiveSort.Actions
         public MergeMany(MergeConf conf)
         {
             _Conf = conf;
+        }
+
+        public string GetUsageMessage()
+        {
+            return MergeConf.GetUsageText();
         }
 
         public void Dispose()
