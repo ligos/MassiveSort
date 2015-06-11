@@ -43,6 +43,7 @@ namespace MurrayGrant.MassiveSort.Actions
             this.OutputBufferSize = 256 * 1024;             // Buffer size to use for the final merged output file.
 
             this.LeaveDuplicates = false;
+            this.SaveDuplicates = false;
             this.AggressiveMemoryCollection = false;
             this.SaveStats = false;
             this.DegreeOfParallelism = Helpers.PhysicalCoreCount();
@@ -70,6 +71,8 @@ namespace MurrayGrant.MassiveSort.Actions
     Options
 --leave-duplicates Leave duplicates in the output file
                    Default: remove duplicates
+--save-duplicates  Save duplicates to a separate .duplicates file.
+                   Default: do not save duplicates
 --convert-to-dollar-hex
                    Converts non-ascii bytes to $HEX[] format
                    Default: make no changes to non-ascii bytes
@@ -249,6 +252,11 @@ namespace MurrayGrant.MassiveSort.Actions
         /// </summary>
         [Option("convert-to-dollar-hex")]
         public bool ConvertToDollarHex { get; set; }
+
+        // If true, will save duplicates to a parallel file (.duplicates). False by default.
+        [Option("save-duplicates")]
+        public bool SaveDuplicates { get; set; }
+
 
         public MergeConf ExtraParsing()
         {
@@ -958,9 +966,11 @@ namespace MurrayGrant.MassiveSort.Actions
             long totalLinesRead = 0;
             var workCount = _Conf.DegreeOfParallelism + _Conf.MaxOutstandingSortedChunks;
             var workLimiter = new System.Threading.Semaphore(workCount, workCount);
-
+            var duplicatePath = _Conf.OutputFile + ".duplicates";
+            
             var allSw = Stopwatch.StartNew();
             using (var output = new FileStream(_Conf.OutputFile, FileMode.Create, FileAccess.Write, FileShare.None, _Conf.OutputBufferSize))
+            using (var duplicateOutput = _Conf.SaveDuplicates ? new FileStream(duplicatePath, FileMode.Create, FileAccess.Write, FileShare.None, _Conf.OutputBufferSize) : null)
             {
                 // Now sort each chunk.
                 // PERF: can read and sort each chunk in parallel, but must write at the end in the correct sequence.
@@ -1023,7 +1033,7 @@ namespace MurrayGrant.MassiveSort.Actions
                     // Remove duplicates and write to disk.
                     // PERF: this represents ~20% of the time in this loop. It cannot be parallelised.
                     var dedupAndWriteSw = Stopwatch.StartNew();
-                    var linesWritten = this.WriteAndDeDupe(ch.data, output, (IEqualityComparer<OffsetAndLength>)ch.comparer);
+                    var linesWritten = this.WriteAndDeDupe(ch.data, output, (IEqualityComparer<OffsetAndLength>)ch.comparer, duplicateOutput);
                     totalLinesWritten += linesWritten;
                     totalLinesRead += ch.data.LineOffsets.Length;
                     dedupAndWriteSw.Stop();
@@ -1041,6 +1051,8 @@ namespace MurrayGrant.MassiveSort.Actions
                 }
 
                 output.Flush();
+                if (duplicateOutput != null) 
+                    duplicateOutput.Flush();
             }
             allSw.Stop();
 
@@ -1173,25 +1185,45 @@ namespace MurrayGrant.MassiveSort.Actions
             return offsets;
         }
 
-        private long WriteAndDeDupe(IndexedFileData data, FileStream output, IEqualityComparer<OffsetAndLength> comparer)
+        private long WriteAndDeDupe(IndexedFileData data, FileStream output, IEqualityComparer<OffsetAndLength> comparer, FileStream duplicateOutput)
         {
             long linesWritten = 0;
+            long duplicatesWritten = 0;
+
+            bool saveDuplicates = _Conf.SaveDuplicates && duplicateOutput != null;
+            bool leaveDuplicates = _Conf.LeaveDuplicates;
             var chunkData = data.Chunk;
             var offsets = data.LineOffsets;
-            Func<int, OffsetAndLength, OffsetAndLength, bool> writeWordPredicate = (idx, c, p) => true;
-            if (!_Conf.LeaveDuplicates)
-                writeWordPredicate = (idx, c, p) => idx == 0 || idx > 0 && !comparer.Equals(c, p);
 
-            OffsetAndLength previous = OffsetAndLength.Empty;
+            var previous = OffsetAndLength.Empty;
+            var lastDuplicate = OffsetAndLength.Empty;
             for (int i = 0; i < offsets.Length; i++)
             {
                 var current = offsets[i];
-                if (writeWordPredicate(i, current, previous))
+                var isDuplicate = i > 0 && comparer.Equals(current, previous);
+                
+                if (leaveDuplicates || !isDuplicate)
                 {
+                    // Write to main output.
                     output.Write(chunkData, current.Offset, current.Length);
                     output.WriteByte(newlineByte);
                     linesWritten++;
                 }
+
+                if (isDuplicate && saveDuplicates)
+                {
+                    var isDuplicateDuplicate = comparer.Equals(current, lastDuplicate);
+
+                    // Write the duplicate to file.
+                    if (!isDuplicateDuplicate)
+                    {
+                        duplicateOutput.Write(chunkData, current.Offset, current.Length);
+                        duplicateOutput.WriteByte(newlineByte);
+                        duplicatesWritten++;
+                        lastDuplicate = current;
+                    }
+                }
+
                 previous = current;
             }
             return linesWritten;
@@ -1242,6 +1274,7 @@ namespace MurrayGrant.MassiveSort.Actions
             // During the phase 1 read (splitting / sharding), the max memory usage is:
             var estForSplitPerWorker = (_Conf.ReadBufferSize * 3) + (257 * _Conf.TempFileBufferSize);      // 257 is the number of files open - 256 for a byte of sharding, plus one empty shard.
             var estForSortPerWorker = _Conf.OutputBufferSize        // Output file buffer
+                                    + (_Conf.SaveDuplicates ? _Conf.OutputBufferSize : 0)       // Output buffer when saving duplicates.
                                     + _Conf.MaxSortSize             // Sorting buffer
                                     + (_Conf.MaxSortSize / 9 * System.Runtime.InteropServices.Marshal.SizeOf(typeof(OffsetAndLength)))    // Index into sort buffer. 9 is a conservative guess at the average line length.
                                     + (_Conf.MaxSortSize / 9 * System.Runtime.InteropServices.Marshal.SizeOf(typeof(OffsetAndLength)))    // Additional sorting buffers / stack. 9 is a conservative guess at the average line length.
