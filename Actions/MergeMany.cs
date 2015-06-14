@@ -22,8 +22,6 @@ using System.Threading.Tasks;
 using System.IO;
 using System.Diagnostics;
 using CommandLine;
-using Humanizer;
-using Humanizer.Bytes;
 
 namespace MurrayGrant.MassiveSort.Actions
 {
@@ -260,17 +258,17 @@ namespace MurrayGrant.MassiveSort.Actions
 
         public MergeConf ExtraParsing()
         {
-            ByteSize s;
-            if (!String.IsNullOrEmpty(this.MaxSortSize_Raw) && ByteSize.TryParse(this.MaxSortSize_Raw, out s))
-                MaxSortSize = (int)s.Bytes;
-            if (!String.IsNullOrEmpty(this.LineBufferSize_Raw) && ByteSize.TryParse(this.LineBufferSize_Raw, out s))
-                LineBufferSize = (int)s.Bytes;
-            if (!String.IsNullOrEmpty(this.ReadBufferSize_Raw) && ByteSize.TryParse(this.ReadBufferSize_Raw, out s))
-                ReadBufferSize = (int)s.Bytes;
-            if (!String.IsNullOrEmpty(this.TempFileBufferSize_Raw) && ByteSize.TryParse(this.TempFileBufferSize_Raw, out s))
-                TempFileBufferSize = (int)s.Bytes;
-            if (!String.IsNullOrEmpty(this.OutputBufferSize_Raw) && ByteSize.TryParse(this.OutputBufferSize_Raw, out s))
-                OutputBufferSize = (int)s.Bytes;
+            long size;
+            if (!String.IsNullOrEmpty(this.MaxSortSize_Raw) && Helpers.TryParseByteSized(this.MaxSortSize_Raw, out size))
+                MaxSortSize = (int)size;
+            if (!String.IsNullOrEmpty(this.LineBufferSize_Raw) && Helpers.TryParseByteSized(this.LineBufferSize_Raw, out size))
+                LineBufferSize = (int)size;
+            if (!String.IsNullOrEmpty(this.ReadBufferSize_Raw) && Helpers.TryParseByteSized(this.ReadBufferSize_Raw, out size))
+                ReadBufferSize = (int)size;
+            if (!String.IsNullOrEmpty(this.TempFileBufferSize_Raw) && Helpers.TryParseByteSized(this.TempFileBufferSize_Raw, out size))
+                TempFileBufferSize = (int)size;
+            if (!String.IsNullOrEmpty(this.OutputBufferSize_Raw) && Helpers.TryParseByteSized(this.OutputBufferSize_Raw, out size))
+                OutputBufferSize = (int)size;
             
             return this;
         }
@@ -283,16 +281,16 @@ namespace MurrayGrant.MassiveSort.Actions
             if (String.IsNullOrEmpty(OutputFile))
                 result.AppendLine("'output' argument is required.");
 
-            ByteSize s;
-            if (!String.IsNullOrEmpty(this.MaxSortSize_Raw) && !ByteSize.TryParse(this.MaxSortSize_Raw, out s))
+            long size;
+            if (!String.IsNullOrEmpty(this.MaxSortSize_Raw) && !Helpers.TryParseByteSized(this.MaxSortSize_Raw, out size))
                 result.Append("'max-sort-size' cannot be parsed.");
-            if (!String.IsNullOrEmpty(this.LineBufferSize_Raw) && !ByteSize.TryParse(this.LineBufferSize_Raw, out s))
+            if (!String.IsNullOrEmpty(this.LineBufferSize_Raw) && !Helpers.TryParseByteSized(this.LineBufferSize_Raw, out size))
                 result.Append("'line-buffer-size' cannot be parsed.");
-            if (!String.IsNullOrEmpty(this.ReadBufferSize_Raw) && !ByteSize.TryParse(this.ReadBufferSize_Raw, out s))
+            if (!String.IsNullOrEmpty(this.ReadBufferSize_Raw) && !Helpers.TryParseByteSized(this.ReadBufferSize_Raw, out size))
                 result.Append("'read-file-buffer-size' cannot be parsed.");
-            if (!String.IsNullOrEmpty(this.TempFileBufferSize_Raw) && !ByteSize.TryParse(this.TempFileBufferSize_Raw, out s))
+            if (!String.IsNullOrEmpty(this.TempFileBufferSize_Raw) && !Helpers.TryParseByteSized(this.TempFileBufferSize_Raw, out size))
                 result.Append("'temp-file-buffer-size' cannot be parsed.");
-            if (!String.IsNullOrEmpty(this.OutputBufferSize_Raw) && !ByteSize.TryParse(this.OutputBufferSize_Raw, out s))
+            if (!String.IsNullOrEmpty(this.OutputBufferSize_Raw) && !Helpers.TryParseByteSized(this.OutputBufferSize_Raw, out size))
                 result.Append("'output-file-buffer-size' cannot be parsed.");
 
             // Other sanity checks.
@@ -461,7 +459,7 @@ namespace MurrayGrant.MassiveSort.Actions
             var totalTimeSeconds = sw.Elapsed.TotalSeconds;
             var totalMB = files.Sum(x => x.Length) / oneMbAsDouble;
             var totalLines = shardedFileDetails.Values.Sum(x => x.Lines);
-            _Progress.Report(new BasicProgress(String.Format("Finished splitting files in {0}.\n", totalTimeSeconds.Seconds().ToSizedString()), true));
+            _Progress.Report(new BasicProgress(String.Format("Finished splitting files in {0}.\n", sw.Elapsed.ToSizedString()), true));
             this.WriteStats("Finished splitting {0:N0} file(s) with {1:N0} lines ({2:N2} MB) in {3:N1} sec, {4:N0} lines / sec, {5:N1} MB / sec.", files.Count(), totalLines, totalMB, totalTimeSeconds, totalLines / totalTimeSeconds, totalMB / totalTimeSeconds);
 
             var toSort = shardedFileDetails.Where(x => File.Exists(x.Key)).OrderBy(x => x.Key).Select(x => x.Value).ToList();
@@ -1298,11 +1296,11 @@ namespace MurrayGrant.MassiveSort.Actions
             if (_Conf.Debug)
             {
                 Console.WriteLine("Configuration:");
-                Console.WriteLine("  Max Sort Size: " + _Conf.MaxSortSize.Bytes().ToString());
-                Console.WriteLine("  Read File Buffer Size: " + _Conf.ReadBufferSize.Bytes().ToString());
-                Console.WriteLine("  Line Buffer Size: " + _Conf.LineBufferSize.Bytes().ToString());
-                Console.WriteLine("  Temp File Buffer Size: " + _Conf.TempFileBufferSize.Bytes().ToString());
-                Console.WriteLine("  Output File Buffer Size: " + _Conf.OutputBufferSize.Bytes().ToString());
+                Console.WriteLine("  Max Sort Size: " + _Conf.MaxSortSize.ToByteSizedString());
+                Console.WriteLine("  Read File Buffer Size: " + _Conf.ReadBufferSize.ToByteSizedString());
+                Console.WriteLine("  Line Buffer Size: " + _Conf.LineBufferSize.ToByteSizedString());
+                Console.WriteLine("  Temp File Buffer Size: " + _Conf.TempFileBufferSize.ToByteSizedString());
+                Console.WriteLine("  Output File Buffer Size: " + _Conf.OutputBufferSize.ToByteSizedString());
                 Console.WriteLine("  Workers: " + _Conf.DegreeOfParallelism);
                 Console.WriteLine("  IO Workers: " + _Conf.DegreeOfIOParallelism);
                 Console.WriteLine("  Temp Folder: " + _Conf.TempFolder);

@@ -91,7 +91,12 @@ namespace MurrayGrant.MassiveSort
                 if (!helpRequested)
                     Console.WriteLine(errorText);
                 Console.WriteLine(usageText);
-                
+
+                if (Environment.UserInteractive && Debugger.IsAttached)
+                {
+                    Console.Write("Press a key to end.");
+                    Console.ReadKey();
+                }
                 return 1;
             }
 

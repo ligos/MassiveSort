@@ -237,5 +237,113 @@ namespace MurrayGrant.MassiveSort
             else
                 throw new NotImplementedException("PhysicalCoreCount() is not supported on " + Environment.OSVersion.Platform);
         }
+
+        public static string ToByteSizedString(this int number, int decimals = 2)
+        {
+            return ToByteSizedString((long)number, decimals);
+        }
+        public static string ToByteSizedString(this long number, int decimals = 2)
+        {
+            if (number < 0)
+                throw new ArgumentOutOfRangeException("number", number, "Number must be positive or zero.");
+
+            if (number == 0)
+                return "0 bytes";
+            else if (number == 1)
+                return "1 byte";
+            else if (number < 1024L)
+                return number.ToString() + " bytes";
+            else if (number < 1024L * 1024L)
+                return (number / (1024.0)).ToString("0." + new string('#', decimals)) + " KB";
+            else if (number < 1024L * 1024L * 1024L)
+                return (number / (1024.0 * 1024.0)).ToString("0." + new string('#', decimals)) + " MB";
+            else if (number < 1024L * 1024L * 1024L * 1024L)
+                return (number / (1024.0 * 1024.0 * 1024.0)).ToString("0." + new string('#', decimals)) + " GB";
+            else if (number < 1024L * 1024L * 1024L * 1024L * 1024L)
+                return (number / (1024.0 * 1024.0 * 1024.0 * 1024.0)).ToString("0." + new string('#', decimals)) + " TB";
+            else if (number < 1024L * 1024L * 1024L * 1024L * 1024L * 1024L)
+                return (number / (1024.0 * 1024.0 * 1024.0 * 1024.0 * 1024.0)).ToString("0." + new string('#', decimals)) + " PB";
+            else
+                throw new ArgumentOutOfRangeException("number", number, "PB are the largest supported unit.");
+            
+        }
+
+        public static long ParseByteSized(string s)
+        {
+            long result;
+            if (!TryParseByteSized(s, out result))
+                throw new FormatException("Unable to parse '" + s + "'. Supported units: B, KB, MB, GB, TB, PB.");
+            return result;
+        }
+        public static bool TryParseByteSized(string s, out long result)
+        {
+            // Can parse <num>[<unit>].
+            // Null and empty string are not allowed.
+            // Negatives are not parsed.
+            // If no unit is specified, bytes are assumed.
+            // Allowed units: B, KB, MB, GB, TB, PB.
+
+            if (String.IsNullOrEmpty(s))
+                throw new ArgumentNullException("s");
+
+            // Find numeric part.
+            var numIdxStart = 0;
+            while (numIdxStart < s.Length && !Char.IsDigit(s, numIdxStart))
+                numIdxStart++;
+            if (numIdxStart >= s.Length)
+            {
+                // Unable to find any numbers.
+                result = 0L;
+                return false;
+            }
+            var numIdxEnd = numIdxStart;
+            while (numIdxEnd < s.Length && (Char.IsDigit(s, numIdxEnd) || s[numIdxEnd] == '.'))     // Not localised.
+                numIdxEnd++;
+            var numericPart = s.Substring(numIdxStart, numIdxEnd - numIdxStart);
+            // Parse numeric part.
+            Double num;
+            if (!Double.TryParse(numericPart, out num))
+            {
+                // Can't parse number.
+                result = 0L;
+                return false;
+            }
+
+            // Find units (optional).
+            var unitIdxStart = numIdxEnd;
+            while (unitIdxStart < s.Length && !Char.IsLetter(s, unitIdxStart))
+                unitIdxStart++;
+            var unitIdxEnd = unitIdxStart;
+            while (unitIdxEnd < s.Length && Char.IsLetter(s, unitIdxEnd))
+                unitIdxEnd++;
+            var units = "B";     // Default if no units found.
+            if (unitIdxStart <= s.Length && unitIdxEnd <= s.Length)
+                units = s.Substring(unitIdxStart, unitIdxEnd - unitIdxStart);
+            switch(units.ToUpper())
+            {
+                case "B":
+                    result = (long)num;
+                    break;
+                case "KB":
+                    result = (long)(num * 1024.0);
+                    break;
+                case "MB":
+                    result = (long)(num * 1024.0 * 1024.0);
+                    break;
+                case "GB":
+                    result = (long)(num * 1024.0 * 1024.0 * 1024.0);
+                    break;
+                case "TB":
+                    result = (long)(num * 1024.0 * 1024.0 * 1024.0 * 1024.0);
+                    break;
+                case "PB":
+                    result = (long)(num * 1024.0 * 1024.0 * 1024.0 * 1024.0 * 1024.0);
+                    break;
+                default:
+                    throw new FormatException("Unable to parse '" + s + "': unknown unit '" + units + "'.");
+            }
+
+            return true;
+        }
     }
 }
