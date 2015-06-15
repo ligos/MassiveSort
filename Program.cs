@@ -29,6 +29,11 @@ namespace MurrayGrant.MassiveSort
     {
         public static int Main(string[] args)
         {
+            Console.OutputEncoding = Encoding.UTF8;
+
+            Console.WriteLine("MassiveSort v{0} - {1}", About.Version, About.Copyright);
+            Console.WriteLine();
+
             var conf = new Conf();
             var verbSelected = "";
             bool helpRequested = false;
@@ -58,7 +63,10 @@ namespace MurrayGrant.MassiveSort
                 action = new CleanTemp(conf.CleanTempOptions);
             else if (!parseSucceeded && verb == "cleantemp")
                 usageText = CleanTempConf.GetUsageText();
-            else if (verb == "help" && args.Length == 1) {
+            else if (verb == "about")
+                action = new About();
+            else if (verb == "help" && args.Length == 1)
+            {
                 errorText = "Here's some help:";
                 usageText = Conf.GetUsageText();
             } else if (verb == "help" && args.Length == 2) {

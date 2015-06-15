@@ -42,6 +42,8 @@ namespace MurrayGrant.MassiveSort
         public MurrayGrant.MassiveSort.Actions.MergeConf MergeOptions { get; set; }
         [VerbOption("cleantemp")]
         public MurrayGrant.MassiveSort.Actions.CleanTempConf CleanTempOptions { get; set; }
+        [VerbOption("about")]
+        public MurrayGrant.MassiveSort.Conf AboutOptions { get; set; }
     
         public bool HelpWasRequested 
         { 
@@ -60,11 +62,13 @@ namespace MurrayGrant.MassiveSort
         public static readonly string FirstUsageLineText = "  Usage: MassiveSort <verb> <arguments> [options]\n";
         public static string GetUsageText()
         {
-            return FirstUsageLineText + @"
+            return FirstUsageLineText + String.Format(@"
 merge        Merges and sorts one or more files to a new copy
 cleanTemp    Cleans unused files from temporary folders                    
 help         Gets help on a verb, or shows this list                    
-";
+
+Additional information can be found at {0}
+", Actions.About.ProjectUrl);
         }
         
     }
