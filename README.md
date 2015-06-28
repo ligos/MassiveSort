@@ -18,6 +18,8 @@ Merge many files and even whole folders into a single, sorted file:
 
 By default, MassiveSort removes duplicates. Use the `--leave-duplicates` options to keep them (if you're that attached to them).
 
+See the [wiki for more details](wiki).
+
 ## Longer Term Goals ##
 
 * Using multiple CPUs / cores.
