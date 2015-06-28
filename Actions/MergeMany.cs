@@ -63,10 +63,10 @@ namespace MurrayGrant.MassiveSort.Actions
 -i --input    One or more files or folders to sort
 -o --output   A file to write the output to
   
--t --temp-folder   Folder to use for writing temporary files
-                   Default: %TEMP%\MassiveSort\<PID>
  
     Options
+-t --temp-folder   Folder to use for writing temporary files
+                   Default: %TEMP%\MassiveSort\<PID>
 --leave-duplicates Leave duplicates in the output file
                    Default: remove duplicates
 --save-duplicates  Save duplicates to a separate .duplicates file.
