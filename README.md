@@ -18,7 +18,7 @@ Merge many files and even whole folders into a single, sorted file:
 
 By default, MassiveSort removes duplicates. Use the `--leave-duplicates` options to keep them (if you're that attached to them).
 
-See the [wiki for more details](wiki).
+See the [wiki for more details](https://bitbucket.org/ligos/massivesort/wiki).
 
 ## Longer Term Goals ##
 
