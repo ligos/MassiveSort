@@ -336,7 +336,6 @@ namespace MurrayGrant.MassiveSort.Actions
         private static readonly byte _DollarHexSuffix = Encoding.ASCII.GetBytes("]").First();
 
         private readonly MergeConf _Conf;
-        private ParallelOptions _ParallelOptsForConfiguredDegreeOfParallelism;
         private ParallelOptions _ParallelOptsForConfiguredDegreeOfIOParallelism;
 
         private readonly IProgress<BasicProgress> _Progress = new ConsoleProgressReporter();
@@ -379,9 +378,6 @@ namespace MurrayGrant.MassiveSort.Actions
             PrintConf();        // Print the config settings, in debug mode.
 
             // Configure TPL.
-            var opts = new ParallelOptions();
-            opts.MaxDegreeOfParallelism = _Conf.DegreeOfParallelism;
-            this._ParallelOptsForConfiguredDegreeOfParallelism = opts;
             var ioOpts = new ParallelOptions();
             ioOpts.MaxDegreeOfParallelism = _Conf.DegreeOfIOParallelism;
             this._ParallelOptsForConfiguredDegreeOfIOParallelism = ioOpts;
@@ -414,7 +410,7 @@ namespace MurrayGrant.MassiveSort.Actions
 
 
         #region Split
-        private IEnumerable<FileInfo> GatherFiles()
+        private IList<FileInfo> GatherFiles()
         {
             if (_Conf.Debug)
                 _Progress.Report(new BasicProgress(String.Format("Gathering files to merge from '{0}'.", String.Join("; ", _Conf.Inputs)), true));
@@ -424,14 +420,14 @@ namespace MurrayGrant.MassiveSort.Actions
                     Directory.Exists(i) ? new DirectoryInfo(i).EnumerateFiles("*", SearchOption.AllDirectories)
                                         : new FileInfo[] { new FileInfo(i) }
                 )
-                .OrderBy(x => x.FullName, StringComparer.CurrentCultureIgnoreCase)
+                .OrderByDescending(x => x.Length)       // Sort in length order, assuming that similar sized files will require similar amounts of work.
                 .ToList();
             sw.Stop();
 
             this.WriteStats("Found {0:N0} files to merge, totaling {1:N1}MB. Time to search: {2:N1}ms.", result.Count, result.Sum(x => x.Length) / oneMbAsDouble, sw.Elapsed.TotalMilliseconds);
             return result;
         }
-        private IEnumerable<FileResult> SplitFiles(IEnumerable<FileInfo> files)
+        private IEnumerable<FileResult> SplitFiles(IList<FileInfo> files)
         {
             // Stage 1: read all files and split lines into buckets.
 
@@ -442,16 +438,26 @@ namespace MurrayGrant.MassiveSort.Actions
 
             // Test to see if we need further levels of sharding to make files small enough to sort.
             int shardSize = 2;
-            var filesLargerThanSortSize = new DirectoryInfo(_Conf.TempFolder).EnumerateFiles("*", SearchOption.AllDirectories).Where(f => f.Length > _Conf.MaxSortSize);
+            var filesLargerThanSortSize =
+                new DirectoryInfo(_Conf.TempFolder)
+                        .EnumerateFiles("*", SearchOption.AllDirectories)
+                        .Where(f => f.Length > _Conf.MaxSortSize)
+                        .OrderByDescending(x => x.Length)       // Sort in length order, assuming that similar sized files will require similar amounts of work.
+                        .ToList();        
             while (filesLargerThanSortSize.Any())
             {
-                _Progress.Report(new BasicProgress(String.Format("Splitting {0:N0} file(s) (round {0})...", shardSize), true));
-                this.WriteStats("Splitting {0:N0} file(s) (round 1)...", shardSize, filesLargerThanSortSize.Count());
+                _Progress.Report(new BasicProgress(String.Format("Splitting {0:N0} file(s) (round {1})...", filesLargerThanSortSize.Count(), shardSize), true));
+                this.WriteStats("Splitting {0:N0} file(s) (round {1})...", filesLargerThanSortSize.Count(), shardSize);
 
                 this.DoSubLevelSplit(filesLargerThanSortSize, shardSize, shardedFileDetails);
                 
                 shardSize++;
-                filesLargerThanSortSize = new DirectoryInfo(_Conf.TempFolder).EnumerateFiles("*", SearchOption.AllDirectories).Where(f => f.Length > _Conf.MaxSortSize);
+                filesLargerThanSortSize =   
+                    new DirectoryInfo(_Conf.TempFolder)
+                        .EnumerateFiles("*", SearchOption.AllDirectories)
+                        .Where(f => f.Length > _Conf.MaxSortSize)
+                        .OrderByDescending(x => x.Length)       // Sort in length order, assuming that similar sized files will require similar amounts of work.
+                        .ToList();
             }
             sw.Stop();
 
@@ -465,7 +471,7 @@ namespace MurrayGrant.MassiveSort.Actions
             var toSort = shardedFileDetails.Where(x => File.Exists(x.Key)).OrderBy(x => x.Key).Select(x => x.Value).ToList();
             return toSort;
         }
-        private IDictionary<string, FileResult> DoTopLevelSplit(IEnumerable<FileInfo> files)
+        private IDictionary<string, FileResult> DoTopLevelSplit(IList<FileInfo> files)
         {
             var shardFiles = CreateShardFiles("");
             var lineCounts = new long[shardFiles.Length];
@@ -473,10 +479,16 @@ namespace MurrayGrant.MassiveSort.Actions
             try
             {
                 // Each file is split in parallel, with the assumption that we synchronise on the resulting file streams in SplitFile().
-                Parallel.ForEach(files, _ParallelOptsForConfiguredDegreeOfParallelism, f => {
-                    var taskKey = new object();
-                    SplitFile(shardFiles, lineCounts, f, 1, taskKey);
-                });
+                // Using a partitioner with a single element partition to keep the order of files.
+                Partitioner.Create(0, files.Count, 1)
+                    .AsParallel()
+                    .WithDegreeOfParallelism(_Conf.DegreeOfParallelism)
+                    .WithMergeOptions(ParallelMergeOptions.NotBuffered)
+                    .ForAll(fIdx => {
+                        var f = files[fIdx.Item1];       // Careful to only read the collection!
+                        var taskKey = new object();
+                        SplitFile(shardFiles, lineCounts, f, 1, taskKey);
+                    });
                 for (int i = 0; i < shardFiles.Length; i++)
                     result.Add(shardFiles[i].Name, new FileResult(new FileInfo(shardFiles[i].Name), lineCounts[i]));
             }
@@ -491,32 +503,38 @@ namespace MurrayGrant.MassiveSort.Actions
 
             return result;
         }
-        private void DoSubLevelSplit(IEnumerable<FileInfo> files, int shardSize, IDictionary<string, FileResult> result)
+        private void DoSubLevelSplit(IList<FileInfo> files, int shardSize, IDictionary<string, FileResult> result)
         {
             // The logic for sub level splits is slightly different.
             // We split each file individually and replace it at the end.
             // PERF: each file can be split in parallel, no synchronisation is required.
+            // Using a partitioner with a single element partition to keep the order of files.
 
-            Parallel.ForEach(files, _ParallelOptsForConfiguredDegreeOfParallelism, f =>
-            {
-                var shardFiles = CreateShardFiles(Path.GetFileNameWithoutExtension(f.Name));
-                var lineCounts = new long[shardFiles.Length];
-                var taskKey = new object();
-
-                try
+            Partitioner.Create(0, files.Count, 1)
+                .AsParallel()
+                .WithDegreeOfParallelism(_Conf.DegreeOfParallelism)
+                .WithMergeOptions(ParallelMergeOptions.NotBuffered)
+                .ForAll(fIdx =>
                 {
-                    SplitFile(shardFiles, lineCounts, f, shardSize, taskKey);
-                    for (int i = 0; i < shardFiles.Length; i++)
-                        result.Add(shardFiles[i].Name, new FileResult(new FileInfo(shardFiles[i].Name), lineCounts[i]));
-                }
-                finally
-                {
-                    this.FlushFiles(shardFiles, f.FullName, lineCounts.Last(), result, taskKey);
-                }
+                    var f = files[fIdx.Item1];       // Careful to only read the collection!
+                    var shardFiles = CreateShardFiles(Path.GetFileNameWithoutExtension(f.Name));
+                    var lineCounts = new long[shardFiles.Length];
+                    var taskKey = new object();
 
-                if (_Conf.AggressiveMemoryCollection)
-                    GC.Collect();
-            });
+                    try
+                    {
+                        SplitFile(shardFiles, lineCounts, f, shardSize, taskKey);
+                        for (int i = 0; i < shardFiles.Length; i++)
+                            result.Add(shardFiles[i].Name, new FileResult(new FileInfo(shardFiles[i].Name), lineCounts[i]));
+                    }
+                    finally
+                    {
+                        this.FlushFiles(shardFiles, f.FullName, lineCounts.Last(), result, taskKey);
+                    }
+
+                    if (_Conf.AggressiveMemoryCollection)
+                        GC.Collect();
+                });
         }
         private void FlushFiles(FileStream[] shardFiles, string moveLastShardToPath, long lastShardLineCount, IDictionary<string, FileResult> result, object taskKey)
         {
@@ -531,6 +549,8 @@ namespace MurrayGrant.MassiveSort.Actions
                 fs.Flush();
                 fs.Close();
             });
+            for (int i = 0; i < shardFiles.Length; i++)
+                shardFiles[i] = null;
             
             // Delete any zero length files.
             Parallel.ForEach(toDelete, _ParallelOptsForConfiguredDegreeOfIOParallelism, f => { File.Delete(f); });
@@ -606,7 +626,7 @@ namespace MurrayGrant.MassiveSort.Actions
             // The allocation size allow us to convert a full line buffer to $HEX[...] format.
             var extraBuffer = new byte[_Conf.LineBufferSize * 2 + _DollarHexPrefix.Length + 1];       
             bool emptyStringFound = false;
-            bool shardWithLock = (shardSize == 1 && _ParallelOptsForConfiguredDegreeOfParallelism.MaxDegreeOfParallelism > 1);
+            bool shardWithLock = (shardSize == 1 && _Conf.DegreeOfParallelism > 1);
             bool trimWhitespace = (_Conf.Whitespace == MergeConf.WhitespaceOptions.Trim);
             bool stripWhitespace = (_Conf.Whitespace == MergeConf.WhitespaceOptions.Strip);
             bool convertToDollarHex = _Conf.ConvertToDollarHex;
