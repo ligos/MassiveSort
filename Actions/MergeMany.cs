@@ -46,7 +46,7 @@ namespace MurrayGrant.MassiveSort.Actions
             this.SaveStats = false;
             this.DegreeOfParallelism = Helpers.PhysicalCoreCount();
             this.DegreeOfIOParallelism = 8;                 // Default of 8 IO workers. Should provide a balance between SSD and HDD.
-            this.MaxOutstandingSortedChunks = 10;
+            this.MaxOutstandingSortedChunks = 5;
 
             this.SortAlgorithm = SortAlgorithms.TimSort;    // Sort algorithm to use. 
             this.Comparer = Comparers.Clr;                  // IComparer implementation to use.
@@ -965,7 +965,7 @@ namespace MurrayGrant.MassiveSort.Actions
             var workCount = _Conf.DegreeOfParallelism + _Conf.MaxOutstandingSortedChunks;
             var workLimiter = new System.Threading.Semaphore(workCount, workCount);
             var duplicatePath = _Conf.OutputFile + ".duplicates";
-            
+
             var allSw = Stopwatch.StartNew();
             using (var output = new FileStream(_Conf.OutputFile, FileMode.Create, FileAccess.Write, FileShare.None, _Conf.OutputBufferSize))
             using (var duplicateOutput = _Conf.SaveDuplicates ? new FileStream(duplicatePath, FileMode.Create, FileAccess.Write, FileShare.None, _Conf.OutputBufferSize) : null)
@@ -991,7 +991,7 @@ namespace MurrayGrant.MassiveSort.Actions
 
                         // Wait until work has been written to disk.
                         // In case of very slow disks (eg: USB2 / 10Mb ethernet) we can sort faster than we can write.
-                        // With enough files, this can exhaust virtual memory.
+                        // With enough files, this can exhaust virtual memory. Seriously!
                         // We also need to schedule each chunk in order, because if we get out sync by too many, we can deadlock.
                         var waitSw = Stopwatch.StartNew();
                         workLimiter.WaitOne();
@@ -1002,6 +1002,7 @@ namespace MurrayGrant.MassiveSort.Actions
                         var readSw = Stopwatch.StartNew();
                         var chunkData = this.ReadFilesForSorting(ch);           // This allocates a large byte[].
                         var offsets = this.FindLineBoundariesForSorting(chunkData, ch);     // PERF: this is ~8%. This allocates a large Int64[].
+                        var linesRead = offsets.Length;
                         readSw.Stop();
 
                         // Actually sort them!
@@ -1010,19 +1011,28 @@ namespace MurrayGrant.MassiveSort.Actions
                         var sortSw = Stopwatch.StartNew();
                         var comparer = this.GetOffsetComparer(chunkData);
                         offsets = this.SortLines(chunkData, offsets, comparer);
-                        var data = new IndexedFileData(chunkData, offsets);
                         sortSw.Stop();
+
+                        // Filter the sorted data to exclude duplicates.
+                        var deDupeSw = Stopwatch.StartNew();
+                        var deDupTuple = this.DeDupe(chunkData, offsets, (IEqualityComparer<OffsetAndLength>)comparer);
+                        var data = new IndexedFileData(chunkData, deDupTuple.Item1);
+                        var duplicates = new IndexedFileData(chunkData, deDupTuple.Item2);
+                        deDupeSw.Stop();
+
                         _Progress.Report(new TaskProgress(" Sorted. ", false, taskKey));
 
                         return new {
                             ch, 
                             chNum,
+                            linesRead,
                             data,
-                            comparer,
+                            duplicates,
                             taskKey,
                             readTime = readSw.Elapsed,
                             sortTime = sortSw.Elapsed,
                             waitTime = waitSw.Elapsed,
+                            deDupTime = deDupeSw.Elapsed,
                         };
                     });
 
@@ -1030,20 +1040,23 @@ namespace MurrayGrant.MassiveSort.Actions
                 {
                     // Remove duplicates and write to disk.
                     // PERF: this represents ~20% of the time in this loop. It cannot be parallelised.
-                    var dedupAndWriteSw = Stopwatch.StartNew();
-                    var linesWritten = this.WriteAndDeDupe(ch.data, output, (IEqualityComparer<OffsetAndLength>)ch.comparer, duplicateOutput);
+                    var writeSw = Stopwatch.StartNew();
+                    var linesWritten = this.WriteToFile(ch.data, output, ch.duplicates, duplicateOutput);
                     totalLinesWritten += linesWritten;
-                    totalLinesRead += ch.data.LineOffsets.Length;
-                    dedupAndWriteSw.Stop();
+                    totalLinesRead += ch.linesRead;
+                    writeSw.Stop();
 
                     // Release the work limiter semaphore.
                     workLimiter.Release();
 
                     _Progress.Report(new TaskProgress(" Written.", true, ch.taskKey));
-                    var chTime = ch.readTime + ch.sortTime + dedupAndWriteSw.Elapsed;
-                    this.WriteStats("Chunk #{0}: processed in {1:N2} sec. Waited {2:N1} sec, read {3:N0} lines in {4:N1}ms, sorted in {5:N1}ms, wrote {6:N0} lines in {7:N1}ms, {8:N0} duplicates removed.", ch.chNum, chTime.TotalSeconds, ch.waitTime.TotalSeconds, ch.data.LineOffsets.Length, ch.readTime.TotalMilliseconds, ch.sortTime.TotalMilliseconds, linesWritten, dedupAndWriteSw.Elapsed.TotalMilliseconds, ch.data.LineOffsets.Length - linesWritten);
-                    
-                    ch.data.Dispose();      // Release references to the large arrays allocated when reading files.
+                    var chTime = ch.readTime + ch.sortTime + ch.deDupTime + writeSw.Elapsed;
+                    this.WriteStats("Chunk #{0}: processed in {1:N2} sec. Waited {2:N1} sec, read {3:N0} lines in {4:N1}ms, sorted in {5:N1}ms, {8:N0} duplicates removed in {9:N1}ms, wrote {6:N0} lines in {7:N1}ms.", ch.chNum, chTime.TotalSeconds, ch.waitTime.TotalSeconds, ch.linesRead, ch.readTime.TotalMilliseconds, ch.sortTime.TotalMilliseconds, linesWritten, writeSw.Elapsed.TotalMilliseconds, ch.linesRead - linesWritten, ch.deDupTime.TotalMilliseconds);
+
+                    // Release references to the large arrays allocated when reading files.
+                    ch.data.Dispose();      
+                    if (ch.duplicates != null)
+                        ch.duplicates.Dispose();
                     if (_Conf.AggressiveMemoryCollection)
                         GC.Collect();       
                 }
@@ -1183,46 +1196,79 @@ namespace MurrayGrant.MassiveSort.Actions
             return offsets;
         }
 
-        private long WriteAndDeDupe(IndexedFileData data, FileStream output, IEqualityComparer<OffsetAndLength> comparer, FileStream duplicateOutput)
+        private Tuple<OffsetAndLength[], OffsetAndLength[]> DeDupe(byte[] chunkData, OffsetAndLength[] offsets, IEqualityComparer<OffsetAndLength> comparer)
         {
-            long linesWritten = 0;
-            long duplicatesWritten = 0;
+            var sw = Stopwatch.StartNew();
 
-            bool saveDuplicates = _Conf.SaveDuplicates && duplicateOutput != null;
+            var uniques = new List<OffsetAndLength>(offsets.Length);
+            var dups = _Conf.SaveDuplicates ? new List<OffsetAndLength>(offsets.Length / 4) : null;
+
+            bool saveDuplicates = _Conf.SaveDuplicates;
             bool leaveDuplicates = _Conf.LeaveDuplicates;
-            var chunkData = data.Chunk;
-            var offsets = data.LineOffsets;
-
+            
+            // Nothing needs to be done!
+            if (leaveDuplicates && !saveDuplicates)
+                return Tuple.Create(offsets, (OffsetAndLength[])null);
+ 
             var previous = OffsetAndLength.Empty;
             var lastDuplicate = OffsetAndLength.Empty;
             for (int i = 0; i < offsets.Length; i++)
             {
                 var current = offsets[i];
                 var isDuplicate = i > 0 && comparer.Equals(current, previous);
-                
-                if (leaveDuplicates || !isDuplicate)
-                {
-                    // Write to main output.
-                    output.Write(chunkData, current.Offset, current.Length);
-                    output.WriteByte(newlineByte);
-                    linesWritten++;
-                }
 
+                // Record unique lines.
+                if (leaveDuplicates || !isDuplicate)
+                    uniques.Add(current);
+
+                // Record duplicate lines.
                 if (isDuplicate && saveDuplicates)
                 {
                     var isDuplicateDuplicate = comparer.Equals(current, lastDuplicate);
-
-                    // Write the duplicate to file.
                     if (!isDuplicateDuplicate)
                     {
-                        duplicateOutput.Write(chunkData, current.Offset, current.Length);
-                        duplicateOutput.WriteByte(newlineByte);
-                        duplicatesWritten++;
+                        dups.Add(current);
                         lastDuplicate = current;
                     }
                 }
 
                 previous = current;
+            }
+
+            var result = Tuple.Create(uniques.ToArray(), dups == null ? null : dups.ToArray());
+
+            sw.Stop();
+            this.WriteStats("De-duplicated {0:N0} lines(s), {1:N1}MB in {2:N1}ms. {3:N0} line(s) remain, {4:N0} duplicates removed.", offsets.Length, chunkData.Length / oneMbAsDouble, sw.Elapsed.TotalMilliseconds, uniques.Count, offsets.Length - uniques.Count);
+            return result;
+        }
+
+        private long WriteToFile(IndexedFileData data, FileStream output, IndexedFileData duplicates, FileStream duplicateOutput)
+        {
+            long linesWritten = 0L;
+
+            // Write unique lines.
+            var chunkData = data.Chunk;
+            var offsets = data.LineOffsets;
+            for (int i = 0; i < offsets.Length; i++)
+            {
+                var current = offsets[i];
+                output.Write(chunkData, current.Offset, current.Length);
+                output.WriteByte(newlineByte);
+                linesWritten++;
+            }
+
+            // Write duplicate lines, if any.
+            if (_Conf.SaveDuplicates && duplicates != null && duplicateOutput != null)
+            {
+                chunkData = duplicates.Chunk;
+                offsets = duplicates.LineOffsets;
+                for (int i = 0; i < offsets.Length; i++)
+                {
+                    var current = offsets[i];
+                    duplicateOutput.Write(chunkData, current.Offset, current.Length);
+                    duplicateOutput.WriteByte(newlineByte);
+                }
+
             }
             return linesWritten;
         }
@@ -1275,6 +1321,7 @@ namespace MurrayGrant.MassiveSort.Actions
                                     + (_Conf.SaveDuplicates ? _Conf.OutputBufferSize : 0)       // Output buffer when saving duplicates.
                                     + _Conf.MaxSortSize             // Sorting buffer
                                     + (_Conf.MaxSortSize / 9 * System.Runtime.InteropServices.Marshal.SizeOf(typeof(OffsetAndLength)))    // Index into sort buffer. 9 is a conservative guess at the average line length.
+                                    + (_Conf.MaxSortSize / 9 * System.Runtime.InteropServices.Marshal.SizeOf(typeof(OffsetAndLength)))    // De-Duplication array. 9 is a conservative guess at the average line length.
                                     + (_Conf.MaxSortSize / 9 * System.Runtime.InteropServices.Marshal.SizeOf(typeof(OffsetAndLength)))    // Additional sorting buffers / stack. 9 is a conservative guess at the average line length.
                                     + (10 * 1024 * 1024);           // TPL / Parallel overhead (eg: additional thread, TPL buffering and marshalling).
             Console.WriteLine("Estimated Memory Usage:");
@@ -1304,6 +1351,7 @@ namespace MurrayGrant.MassiveSort.Actions
                 Console.WriteLine("  Workers: " + _Conf.DegreeOfParallelism);
                 Console.WriteLine("  IO Workers: " + _Conf.DegreeOfIOParallelism);
                 Console.WriteLine("  Temp Folder: " + _Conf.TempFolder);
+                Console.WriteLine("  Max Outstanding Chunks: " + _Conf.MaxOutstandingSortedChunks);
                 Console.WriteLine("  Sort Algorithm: " + _Conf.SortAlgorithm);
                 Console.WriteLine("  Comparer: " + _Conf.Comparer);
                 Console.WriteLine("  Leave Duplicates: " + _Conf.LeaveDuplicates);
