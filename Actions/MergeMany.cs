@@ -761,6 +761,7 @@ namespace MurrayGrant.MassiveSort.Actions
 
                 // Read the file in buffer sized chunks.
                 // This is perf critical code.
+                // PERF: about 30% of CPU time is spent in this loop and inlined functions (not in the marked functions).
                 while ((bytesInBuffer = ReadLineBuffer(stream, lineBuffer, ch.EndOffset)) > 0)
                 {
                     buffersRead++;
@@ -772,21 +773,21 @@ namespace MurrayGrant.MassiveSort.Actions
                     {
                         linesRead++;
                         if (shardWithLock)
-                            ShardWordToFileWithStreamLock(new ArraySegment<byte>(), shardSize, shardFiles, lineCounts);
+                            ShardWordToFileWithStreamLock(new ByteArraySegment(), shardSize, shardFiles, lineCounts);
                         else
-                            ShardWordToFileWithoutLock(new ArraySegment<byte>(), shardSize, shardFiles, lineCounts);
+                            ShardWordToFileWithoutLock(new ByteArraySegment(), shardSize, shardFiles, lineCounts);
                     }
 
                     do
                     {
                         // Find the next word.
-                        // PERF: about 30% of CPU time is spent in NextWord().
+                        // PERF: about 20% of CPU time is spent in NextWord().
                         ol = NextWord(lineBuffer, idx);
 
                         if (ol.Length >= 0 && ol.Offset >= 0)
                         {
                             // Additional processing happens here.
-                            var toWrite = new ArraySegment<byte>(lineBuffer, ol.Offset, ol.Length);
+                            var toWrite = new ByteArraySegment(lineBuffer, ol.Offset, ol.Length);
 
                             // The order of these means only one will ever be triggered.
                             // The code, as it stands, will not cope with two copies of the line (the copies will overwrite each other on the 2nd call).
@@ -815,7 +816,7 @@ namespace MurrayGrant.MassiveSort.Actions
 
 
                             // Write the word to the shard file.
-                            // PERF: about 40% of CPU time is spent in FileStream.Write(), contained in ShardWordToFile().
+                            // PERF: about 45% of CPU time is spent in FileStream.Write(), contained in ShardWordToFile().
                             linesRead++;
                             if (shardWithLock)
                                 ShardWordToFileWithStreamLock(toWrite, shardSize, shardFiles, lineCounts);
@@ -863,7 +864,7 @@ namespace MurrayGrant.MassiveSort.Actions
 
 
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
-        private void ShardWordToFileWithoutLock(ArraySegment<byte> seg, int shardSize, FileStream[] shardFiles, long[] lineCounts)
+        private void ShardWordToFileWithoutLock(ByteArraySegment seg, int shardSize, FileStream[] shardFiles, long[] lineCounts)
         {
             // Determine the first character(s) to shard into separate files.
             int shard;
@@ -888,7 +889,7 @@ namespace MurrayGrant.MassiveSort.Actions
             lineCounts[shard] = lineCounts[shard] + 1;
         }
 
-        private void ShardWordToFileWithStreamLock(ArraySegment<byte> seg, int shardSize, FileStream[] shardFiles, long[] lineCounts)
+        private void ShardWordToFileWithStreamLock(ByteArraySegment seg, int shardSize, FileStream[] shardFiles, long[] lineCounts)
         {
             // The lock makes it highly unlikely to inline this function call, hence why the code is mostly duplicated.
 
@@ -999,7 +1000,7 @@ namespace MurrayGrant.MassiveSort.Actions
             return false;
         }
 
-        private ArraySegment<byte> TrimWhitespace(ArraySegment<byte> seg, byte[] whitespaceChars)
+        private ByteArraySegment TrimWhitespace(ByteArraySegment seg, byte[] whitespaceChars)
         {
             // Skip over any whitespace at the start.
             int newOffset = seg.Offset;
@@ -1026,10 +1027,10 @@ namespace MurrayGrant.MassiveSort.Actions
                 else
                     break;
 			}
-            
-            return new ArraySegment<byte>(seg.Array, newOffset, newLength);
+
+            return new ByteArraySegment(seg.Array, newOffset, newLength);
         }
-        private ArraySegment<byte> StripWhitespace(ArraySegment<byte> seg, byte[] otherBuf, byte[] whitespaceChars)
+        private ByteArraySegment StripWhitespace(ByteArraySegment seg, byte[] otherBuf, byte[] whitespaceChars)
         {
             // Search for whitespace.
             bool hasWhitespace = false;
@@ -1057,9 +1058,9 @@ namespace MurrayGrant.MassiveSort.Actions
                     oBufIdx++;
                 }
             }
-            return new ArraySegment<byte>(otherBuf, 0, oBufIdx);
+            return new ByteArraySegment(otherBuf, 0, oBufIdx);
         }
-        private ArraySegment<byte> ConvertToDollarHex(ArraySegment<byte> seg, byte[] otherBuf)
+        private ByteArraySegment ConvertToDollarHex(ByteArraySegment seg, byte[] otherBuf)
         {
             // The best definition of the $HEX[] convention is in Waffle's hashcat proposal: https://hashcat.net/trac/ticket/148
 
@@ -1090,7 +1091,7 @@ namespace MurrayGrant.MassiveSort.Actions
             otherBuf[oBufIdx] = _DollarHexSuffix;
             oBufIdx++;
 
-            return new ArraySegment<byte>(otherBuf, 0, oBufIdx);
+            return new ByteArraySegment(otherBuf, 0, oBufIdx);
         }
         #endregion
 
@@ -1145,7 +1146,7 @@ namespace MurrayGrant.MassiveSort.Actions
                         waitSw.Stop();
 
                         // Read the files for the chunk into a single array for sorting.
-                        // PERF: this represents ~10% of the time in this loop.
+                        // PERF: this represents ~5% of the time in this loop.
                         var readSw = Stopwatch.StartNew();
                         var chunkData = this.ReadFilesForSorting(ch);           // This allocates a large byte[].
                         var offsets = this.FindLineBoundariesForSorting(chunkData, ch);     // PERF: this is ~8%. This allocates a large Int64[].
@@ -1153,7 +1154,7 @@ namespace MurrayGrant.MassiveSort.Actions
                         readSw.Stop();
 
                         // Actually sort them!
-                        // PERF: this represents ~2/3 of the time in this loop.
+                        // PERF: this represents ~80% of the time in this loop.
                         // PERF: it's not entirely obvious from the trace, but a significant part of that time is in the comparer.
                         var sortSw = Stopwatch.StartNew();
                         var comparer = this.GetOffsetComparer(chunkData);
@@ -1161,6 +1162,7 @@ namespace MurrayGrant.MassiveSort.Actions
                         sortSw.Stop();
 
                         // Filter the sorted data to exclude duplicates.
+                        // PERF: this represents ~10% of the time in this loop.
                         var deDupeSw = Stopwatch.StartNew();
                         var deDupTuple = this.DeDupe(chunkData, offsets, (IEqualityComparer<OffsetAndLength>)comparer);
                         var data = new IndexedFileData(chunkData, deDupTuple.Item1);
@@ -1186,7 +1188,7 @@ namespace MurrayGrant.MassiveSort.Actions
                 foreach (var ch in sortedChunks)
                 {
                     // Remove duplicates and write to disk.
-                    // PERF: this represents ~20% of the time in this loop. It cannot be parallelised.
+                    // PERF: this represents ~10% of the time in this loop. It cannot be parallelised.
                     var writeSw = Stopwatch.StartNew();
                     var linesWritten = this.WriteToFile(ch.data, output, ch.duplicates, duplicateOutput);
                     totalLinesWritten += linesWritten;

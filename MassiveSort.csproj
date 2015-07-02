@@ -45,6 +45,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Actions\About.cs" />
+    <Compile Include="ByteArraySegment.cs" />
     <Compile Include="Comparers\ClrOffsetComparer.cs" />
     <Compile Include="Comparers\ClrByteArrayComparer.cs" />
     <Compile Include="Comparers\PInvokeByteArrayComparer.cs" />
