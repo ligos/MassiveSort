@@ -24,13 +24,22 @@ namespace MurrayGrant.MassiveSort
 {
     public class FileResult
     {
-        public FileResult(FileInfo file, long lines)
+        public FileResult(string path, long length, long lines)
         {
-            this.File = file;
+            this.FullPath = path;
+            this.Name = Path.GetFileName(path);
+            this.Length = length;
             this.Lines = lines; 
         }
 
-        public readonly FileInfo File;
+        public readonly string FullPath;
+        public readonly string Name;
+        public readonly long Length;
         public readonly long Lines;
+
+        public FileResult AddLines(long l)
+        {
+            return new FileResult(this.FullPath, this.Length, this.Lines + l);
+        }
     }
 }
