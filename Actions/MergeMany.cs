@@ -1558,6 +1558,8 @@ namespace MurrayGrant.MassiveSort.Actions
         private void WarnIfOldTempFilesExist(DirectoryInfo tempBase, DirectoryInfo excludeThisFolder)
         {
             var excludePath = excludeThisFolder.FullName;
+            if (!tempBase.Exists)
+                return;
             var tempFiles = tempBase.EnumerateFiles("*", SearchOption.AllDirectories)
                                 .Where(x => !String.Equals(x.Directory.FullName, excludeThisFolder.FullName, StringComparison.OrdinalIgnoreCase))
                                 .ToList();
