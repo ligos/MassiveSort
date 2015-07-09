@@ -1160,7 +1160,11 @@ namespace MurrayGrant.MassiveSort.Actions
                         // With enough files, this can exhaust virtual memory. Seriously!
                         // We also need to schedule each chunk in order, because if we get out sync by too many, we can deadlock.
                         var waitSw = Stopwatch.StartNew();
-                        workLimiter.WaitOne();
+                        var waitTime = TimeSpan.FromSeconds(1);
+                        while (!workLimiter.WaitOne(waitTime)) {
+                            // This lets us cancel cleanly if we deadlock here.
+                            if (_CancelToken.IsCancellationRequested) return null;
+                        };
                         waitSw.Stop();
                         if (_CancelToken.IsCancellationRequested) return null;
 
