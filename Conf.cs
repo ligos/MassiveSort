@@ -17,6 +17,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using System.IO;
 using CommandLine;
@@ -29,7 +30,7 @@ namespace MurrayGrant.MassiveSort
         string GetValidationError();
         string GetUsageMessage();
 
-        void Do();
+        void Do(CancellationToken token);
     }
 
     public class Conf

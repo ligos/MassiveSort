@@ -17,6 +17,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using System.IO;
 using System.Diagnostics;
@@ -62,12 +63,15 @@ namespace MurrayGrant.MassiveSort.Actions
             return "";
         }
 
-        public void Do()
+        public void Do(CancellationToken token)
         {
             // Check the default temp folder.
             var defaultTempSize = 0L;
             var defaultTemp = Helpers.GetBaseTempFolder();
             Console.Write("Cleaning default temp folder '{0}'...", defaultTemp);
+
+            if (token.IsCancellationRequested)
+                return;
 
             if (Directory.Exists(defaultTemp))
             {
@@ -75,8 +79,12 @@ namespace MurrayGrant.MassiveSort.Actions
                 defaultTempSize = dir.EnumerateFiles("*", SearchOption.AllDirectories).Sum(x => x.Length);
                 foreach (var x in dir.EnumerateFiles())
                     x.Delete();
+                if (token.IsCancellationRequested)
+                    return;
                 foreach (var x in dir.EnumerateDirectories())
                     x.Delete(true);
+                if (token.IsCancellationRequested)
+                    return;
                 Console.WriteLine(" Deleted {0:N1}MB.", defaultTempSize / oneMbAsDouble);
             }
             else
@@ -84,6 +92,9 @@ namespace MurrayGrant.MassiveSort.Actions
                 Console.WriteLine(" Does not exist.");
             }
 
+
+            if (token.IsCancellationRequested)
+                return;
 
             // If one was provided via the command line, check it as well.
             if (String.IsNullOrEmpty(_Conf.TempFolder))
@@ -98,6 +109,8 @@ namespace MurrayGrant.MassiveSort.Actions
                     customTempSize = dir.EnumerateFiles("*", SearchOption.AllDirectories).Sum(x => x.Length);
                     foreach (var x in dir.EnumerateFileSystemInfos())
                         x.Delete();
+                    if (token.IsCancellationRequested)
+                        return;
                     Console.WriteLine(" Deleted {0:N1}MB.", customTempSize / oneMbAsDouble);
                 }
                 else

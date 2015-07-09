@@ -17,6 +17,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using System.IO;
 using System.Diagnostics;
@@ -109,10 +110,11 @@ namespace MurrayGrant.MassiveSort
             }
 
             // Make it so, number one!
+            Console.CancelKeyPress += Console_CancelKeyPress;
             var sw = Stopwatch.StartNew();
             try
             {
-                action.Do();
+                action.Do(_CancelSource.Token);
                 sw.Stop();
             }
             finally
@@ -121,6 +123,7 @@ namespace MurrayGrant.MassiveSort
                 if (asDisposable != null)
                     asDisposable.Dispose();
             }
+            Console.CancelKeyPress -= Console_CancelKeyPress;
 
             Console.WriteLine("Total run time {0:N1}.", sw.Elapsed.ToSizedString());
 
@@ -130,6 +133,14 @@ namespace MurrayGrant.MassiveSort
                 Console.ReadKey();
             }
             return 0;
+        }
+
+        private readonly static CancellationTokenSource _CancelSource = new CancellationTokenSource();
+        static void Console_CancelKeyPress(object sender, ConsoleCancelEventArgs e)
+        {
+            _CancelSource.Cancel();
+            e.Cancel = true;
+            Console.WriteLine("CTRL+C received: cancelling run...");
         }
 
         private static string GetHelpMessageForVerb(string v)

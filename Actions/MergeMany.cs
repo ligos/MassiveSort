@@ -18,6 +18,7 @@ using System.Collections.Generic;
 using System.Collections.Concurrent;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using System.IO;
 using System.Diagnostics;
@@ -384,6 +385,7 @@ namespace MurrayGrant.MassiveSort.Actions
 
         private readonly MergeConf _Conf;
         private ParallelOptions _ParallelOptsForConfiguredDegreeOfIOParallelism;
+        private CancellationToken _CancelToken;
 
         private readonly IProgress<BasicProgress> _Progress = new ConsoleProgressReporter();
 
@@ -420,8 +422,10 @@ namespace MurrayGrant.MassiveSort.Actions
             return _Conf.GetValidationMessage();
         }
 
-        public void Do()
+        public void Do(CancellationToken token)
         {
+            this._CancelToken = token;
+
             PrintConf();        // Print the config settings, in debug mode.
 
             // Configure TPL.
@@ -430,6 +434,7 @@ namespace MurrayGrant.MassiveSort.Actions
             this._ParallelOptsForConfiguredDegreeOfIOParallelism = ioOpts;
 
             InitTempFolder();   // A bit of house cleaning.
+            if (token.IsCancellationRequested) return;
 
             // Initialise the stats file.
             if (_Conf.SaveStats)
@@ -439,13 +444,16 @@ namespace MurrayGrant.MassiveSort.Actions
 
             // Calculate approximate memory usage.
             PrintEstimatedMemoryUsage();
+            if (token.IsCancellationRequested) return;
 
             // Snapshot the files we'll be working with.
             var filesToProcess = this.GatherFiles();
+            if (token.IsCancellationRequested) return;
 
 
             // Stage 1: split / shard files into smaller chunks.
             var toSort = SplitFiles(filesToProcess);
+            if (token.IsCancellationRequested) return;
 
 
             // Stage 2: sort and merge the files.
@@ -481,6 +489,7 @@ namespace MurrayGrant.MassiveSort.Actions
             this.WriteStats("Splitting {0:N0} file(s) (round 1)...", files.Count());
             var sw = Stopwatch.StartNew();
             var shardedFileDetails = this.DoTopLevelSplit(files);
+            if (_CancelToken.IsCancellationRequested) return Enumerable.Empty<FileResult>();
 
             // Test to see if we need further levels of sharding to make files small enough to sort.
             int shardSize = 2;
@@ -495,6 +504,7 @@ namespace MurrayGrant.MassiveSort.Actions
                 this.WriteStats("Splitting {0:N0} file(s) (round {1})...", filesLargerThanSortSize.Count(), shardSize);
 
                 this.DoSubLevelSplit(filesLargerThanSortSize, shardSize, shardedFileDetails);
+                if (_CancelToken.IsCancellationRequested) return Enumerable.Empty<FileResult>();
 
                 shardSize++;
                 filesLargerThanSortSize =
@@ -511,6 +521,7 @@ namespace MurrayGrant.MassiveSort.Actions
             var totalLines = shardedFileDetails.Values.Sum(x => x.Lines);
             _Progress.Report(new BasicProgress(String.Format("Finished splitting files in {0}.\n", sw.Elapsed.ToSizedString()), true));
             this.WriteStats("Finished splitting {0:N0} file(s) with {1:N0} lines ({2:N2} MB) in {3:N1} sec, {4:N0} lines / sec, {5:N1} MB / sec.", files.Count(), totalLines, totalMB, totalTimeSeconds, totalLines / totalTimeSeconds, totalMB / totalTimeSeconds);
+            if (_CancelToken.IsCancellationRequested) return Enumerable.Empty<FileResult>();
 
             var toSort = shardedFileDetails.Where(x => File.Exists(x.Key)).OrderBy(x => x.Key).Select(x => x.Value).ToList();
             return toSort;
@@ -531,6 +542,7 @@ namespace MurrayGrant.MassiveSort.Actions
                     .WithMergeOptions(ParallelMergeOptions.NotBuffered)
                     .ForAll(chIdx =>
                     {
+                        if (_CancelToken.IsCancellationRequested) return;
                         var ch = chunks[chIdx.Item1];       // Careful to only read the collection!
                         var taskKey = new object();
                         SplitFile(shardFiles, lineCounts, ch, 1, taskKey, true);
@@ -562,6 +574,7 @@ namespace MurrayGrant.MassiveSort.Actions
                 .WithMergeOptions(ParallelMergeOptions.NotBuffered)
                 .ForAll(fIdx =>
                 {
+                    if (_CancelToken.IsCancellationRequested) return;
                     var f = filesSortedByLength[fIdx.Item1];       // Careful to only read the collection!
                     var shardFiles = CreateShardFiles(Path.GetFileNameWithoutExtension(f.Name));
                     var lineCounts = new long[shardFiles.Length];
@@ -767,6 +780,7 @@ namespace MurrayGrant.MassiveSort.Actions
                 // PERF: about 30% of CPU time is spent in this loop and inlined functions (not in the marked functions).
                 while ((bytesInBuffer = ReadLineBuffer(stream, lineBuffer, ch.EndOffset)) > 0)
                 {
+                    if (_CancelToken.IsCancellationRequested) break;
                     buffersRead++;
                     int idx = 0;
                     OffsetAndLength ol;
@@ -1134,12 +1148,12 @@ namespace MurrayGrant.MassiveSort.Actions
                     .WithMergeOptions(ParallelMergeOptions.NotBuffered)
                     .Select(chIdx =>
                     {
+                        if (_CancelToken.IsCancellationRequested) return null;
+
                         var ch = sortChunks[chIdx.Item1];       // Careful to only read the collection!
                         var chNum = chIdx.Item1 + 1;
-
                         var taskKey = new Object();
-                        _Progress.Report(new TaskProgress(String.Format("Sorting chunk {0:N0} ({1} - {2})...", chNum, ch.First().Name, ch.Last().Name), false, taskKey));
-                        this.WriteStats("Sorting chunk {0:N0} with {3:N0} files ({1} - {2}: {4:N1}MB, {5:N0} lines)...", chNum, ch.First().Name, ch.Last().Name, ch.Count(), ch.Sum(x => x.Length) / oneMbAsDouble, ch.Sum(x => x.Lines));
+                        this.WriteStats("Chunk #{0}: starting parallel sort thread.", chNum);
 
                         // Wait until work has been written to disk.
                         // In case of very slow disks (eg: USB2 / 10Mb ethernet) we can sort faster than we can write.
@@ -1148,6 +1162,10 @@ namespace MurrayGrant.MassiveSort.Actions
                         var waitSw = Stopwatch.StartNew();
                         workLimiter.WaitOne();
                         waitSw.Stop();
+                        if (_CancelToken.IsCancellationRequested) return null;
+
+                        _Progress.Report(new TaskProgress(String.Format("Sorting chunk {0:N0} ({1} - {2})...", chNum, ch.First().Name, ch.Last().Name), false, taskKey));
+                        this.WriteStats("Sorting chunk {0:N0} with {3:N0} files ({1} - {2}: {4:N1}MB, {5:N0} lines)...", chNum, ch.First().Name, ch.Last().Name, ch.Count(), ch.Sum(x => x.Length) / oneMbAsDouble, ch.Sum(x => x.Lines));
 
                         // Read the files for the chunk into a single array for sorting.
                         // PERF: this represents ~5% of the time in this loop.
@@ -1156,6 +1174,7 @@ namespace MurrayGrant.MassiveSort.Actions
                         var offsets = this.FindLineBoundariesForSorting(chunkData, ch);     // PERF: this is ~8%. This allocates a large Int64[].
                         var linesRead = offsets.Length;
                         readSw.Stop();
+                        if (_CancelToken.IsCancellationRequested) return null;
 
                         // Actually sort them!
                         // PERF: this represents ~80% of the time in this loop.
@@ -1164,6 +1183,7 @@ namespace MurrayGrant.MassiveSort.Actions
                         var comparer = this.GetOffsetComparer(chunkData);
                         offsets = this.SortLines(chunkData, offsets, comparer);
                         sortSw.Stop();
+                        if (_CancelToken.IsCancellationRequested) return null;
 
                         // Filter the sorted data to exclude duplicates.
                         // PERF: this represents ~10% of the time in this loop.
@@ -1174,6 +1194,7 @@ namespace MurrayGrant.MassiveSort.Actions
                         deDupeSw.Stop();
 
                         _Progress.Report(new TaskProgress(" Sorted. ", false, taskKey));
+                        this.WriteStats("Chunk #{0}: ending parallel sort thread.", chNum);
 
                         return new
                         {
@@ -1192,6 +1213,9 @@ namespace MurrayGrant.MassiveSort.Actions
 
                 foreach (var ch in sortedChunks)
                 {
+                    if (_CancelToken.IsCancellationRequested) { workLimiter.Release(); break; }
+                    this.WriteStats("Chunk #{0}: on sequential write thread.", ch.chNum);
+
                     // Remove duplicates and write to disk.
                     // PERF: this represents ~10% of the time in this loop. It cannot be parallelised.
                     var writeSw = Stopwatch.StartNew();

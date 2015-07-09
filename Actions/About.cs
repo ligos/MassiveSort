@@ -17,6 +17,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using System.IO;
 using System.Diagnostics;
@@ -56,7 +57,7 @@ namespace MurrayGrant.MassiveSort.Actions
             return "";
         }
 
-        public void Do()
+        public void Do(CancellationToken token)
         {
             // Display license, authorship and 3rd party library details.
             
