@@ -774,7 +774,7 @@ namespace MurrayGrant.MassiveSort.Actions
             var sw = Stopwatch.StartNew();
 
             // Split the file into chunks.
-            using (var stream = new FileStream(ch.FullPath, FileMode.Open, FileAccess.Read, FileShare.None, _Conf.ReadBufferSize))
+            using (var stream = new FileStream(ch.FullPath, FileMode.Open, FileAccess.Read, FileShare.Read, _Conf.ReadBufferSize))
             {
                 stream.Position = ch.StartOffset;
 
