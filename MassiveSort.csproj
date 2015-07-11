@@ -59,6 +59,7 @@
     <Compile Include="OffsetAndLength.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="ShardFile.cs" />
     <Compile Include="Sorters\TimSort\TimSort.cs" />
     <Compile Include="Sorters\TimSort\TimSortBase.cs" />
     <Compile Include="Sorters\TimSort\TimSortExtender.cs" />

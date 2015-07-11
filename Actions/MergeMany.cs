@@ -523,7 +523,7 @@ namespace MurrayGrant.MassiveSort.Actions
             this.WriteStats("Finished splitting {0:N0} file(s) with {1:N0} lines ({2:N2} MB) in {3:N1} sec, {4:N0} lines / sec, {5:N1} MB / sec.", files.Count(), totalLines, totalMB, totalTimeSeconds, totalLines / totalTimeSeconds, totalMB / totalTimeSeconds);
             if (_CancelToken.IsCancellationRequested) return Enumerable.Empty<FileResult>();
 
-            var toSort = shardedFileDetails.Where(x => File.Exists(x.Key)).OrderBy(x => x.Key).Select(x => x.Value).ToList();
+            var toSort = shardedFileDetails.Where(x => File.Exists(x.Value.FullPath)).OrderBy(x => x.Key).Select(x => x.Value).ToList();
             return toSort;
         }
         private IDictionary<string, FileResult> DoTopLevelSplit(IEnumerable<FileInfo> files)
@@ -548,7 +548,7 @@ namespace MurrayGrant.MassiveSort.Actions
                         SplitFile(shardFiles, lineCounts, ch, 1, taskKey, true);
                     });
                 for (int i = 0; i < shardFiles.Length; i++)
-                    result.Add(shardFiles[i].Name, new FileResult(shardFiles[i].Name, shardFiles[i].Length, lineCounts[i]));
+                    result.Add(shardFiles[i].Name, new FileResult(shardFiles[i].FullPath, shardFiles[i].Stream.Length, lineCounts[i]));
             }
             finally
             {
@@ -586,7 +586,7 @@ namespace MurrayGrant.MassiveSort.Actions
                         var ch = new SplitChunk(f, 0, 0, f.Length);
                         SplitFile(shardFiles, lineCounts, ch, shardSize, taskKey, false);
                         for (int i = 0; i < shardFiles.Length; i++)
-                            result.Add(shardFiles[i].Name, new FileResult(shardFiles[i].Name, shardFiles[i].Length, lineCounts[i]));
+                            result.Add(shardFiles[i].Name, new FileResult(shardFiles[i].FullPath, shardFiles[i].Stream.Length, lineCounts[i]));
                     }
                     finally
                     {
@@ -614,7 +614,7 @@ namespace MurrayGrant.MassiveSort.Actions
                 else
                 {
                     // Large file: need to split into chunks on line boundaries.
-                    using (var fs = new FileStream(f.FullName, FileMode.Open, FileAccess.Read, FileShare.Read))
+                    using (var fs = new FileStream(f.FullName, FileMode.Open, FileAccess.Read, FileShare.None))
                     {
                         int chunkNum = 1;
                         do
@@ -655,18 +655,18 @@ namespace MurrayGrant.MassiveSort.Actions
             return result;
         }
 
-        private void FlushFiles(FileStream[] shardFiles, string moveLastShardToPath, long lastShardLineCount, IDictionary<string, FileResult> result, object taskKey)
+        private void FlushFiles(ShardFile[] shardFiles, string moveLastShardToPath, long lastShardLineCount, IDictionary<string, FileResult> result, object taskKey)
         {
             // Close and flush the shard files created.
             _Progress.Report(new TaskProgress("Flushing data to temp files...", false, taskKey));
             var flushSw = Stopwatch.StartNew();
 
             var emptyShardPath = shardFiles.Last().Name;
-            var toDelete = shardFiles.Where(x => x.Length == 0L).Select(x => x.Name).ToList();
+            var toDelete = shardFiles.Where(x => x.Stream.Length == 0L).Select(x => x.FullPath).ToList();
             Parallel.ForEach(shardFiles, _ParallelOptsForConfiguredDegreeOfIOParallelism, fs =>
             {
-                fs.Flush();
-                fs.Close();
+                fs.Stream.Flush();
+                fs.Dispose();
             });
             for (int i = 0; i < shardFiles.Length; i++)
                 shardFiles[i] = null;
@@ -693,35 +693,38 @@ namespace MurrayGrant.MassiveSort.Actions
             this.WriteStats("Flushed data to temp files in {0:N0}ms.", flushSw.Elapsed.TotalMilliseconds);
         }
 
-        private FileStream[] CreateShardFiles(string initialShard)
+        private ShardFile[] CreateShardFiles(string initialShard)
         {
             var sw = Stopwatch.StartNew();
-            var result = new FileStream[256 + 1];
             var tempFolder = Path.GetFullPath(_Conf.TempFolder);
             var tempFileBufferSize = _Conf.TempFileBufferSize;
+            ShardFile[] result = null;
 
             try
             {
-                // The normal files.
-                Parallel.For(0, 256, _ParallelOptsForConfiguredDegreeOfIOParallelism, i =>
-                {
-                    var file = Path.Combine(tempFolder, initialShard + i.ToString("x2")) + ".txt";
-                    var stream = new FileStream(file, FileMode.OpenOrCreate, FileAccess.Write, FileShare.None, tempFileBufferSize);
-                    result[i] = stream;
-                });
-
-                // A file for empty string / no shard.
-                {
-                    var file = Path.Combine(tempFolder, initialShard + emptyShardFilename) + ".txt";
-                    FileStream stream = new FileStream(file, FileMode.OpenOrCreate, FileAccess.Write, FileShare.None, tempFileBufferSize);
-                    result[256] = stream;
-                }
+                result = ParallelEnumerable.Range(0, 256 + 1)
+                    .AsOrdered().WithDegreeOfParallelism(_Conf.IOWorkers)
+                    .Select(i =>
+                    {
+                        var shardPath = "";
+                        if (i < 256)
+                            // The normal files.
+                            shardPath = Path.Combine(tempFolder, initialShard + i.ToString("x2")) + ".txt";
+                        else
+                            // A file for empty string / no shard.
+                            shardPath = Path.Combine(tempFolder, initialShard + emptyShardFilename) + ".txt";
+                        return new ShardFile(shardPath, tempFileBufferSize);
+                    })
+                    .ToArray();
             }
             catch (Exception)
             {
                 // Any failure and we close any files created so far and blow up.
-                foreach (var f in result.Where(f => f != null))
-                    f.Close();
+                if (result != null)
+                {
+                    foreach (var f in result.Where(f => f != null))
+                        f.Dispose();
+                }
                 throw;
             }
             sw.Stop();
@@ -748,7 +751,7 @@ namespace MurrayGrant.MassiveSort.Actions
             public readonly long EndOffset;
             public long Length { get { return this.EndOffset - this.StartOffset; } }
         }
-        private long SplitFile(FileStream[] shardFiles, long[] lineCounts, SplitChunk ch, int shardSize, object taskKey, bool lockStreams)
+        private long SplitFile(ShardFile[] shardFiles, long[] lineCounts, SplitChunk ch, int shardSize, object taskKey, bool lockStreams)
         {
             long linesRead = 0;
             long buffersSkipped = 0;
@@ -771,7 +774,7 @@ namespace MurrayGrant.MassiveSort.Actions
             var sw = Stopwatch.StartNew();
 
             // Split the file into chunks.
-            using (var stream = new FileStream(ch.FullPath, FileMode.Open, FileAccess.Read, FileShare.Read, _Conf.ReadBufferSize))
+            using (var stream = new FileStream(ch.FullPath, FileMode.Open, FileAccess.Read, FileShare.None, _Conf.ReadBufferSize))
             {
                 stream.Position = ch.StartOffset;
 
@@ -881,7 +884,7 @@ namespace MurrayGrant.MassiveSort.Actions
 
 
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
-        private void ShardWordToFileWithoutLock(ByteArraySegment seg, int shardSize, FileStream[] shardFiles, long[] lineCounts)
+        private void ShardWordToFileWithoutLock(ByteArraySegment seg, int shardSize, ShardFile[] shardFiles, long[] lineCounts)
         {
             // Determine the first character(s) to shard into separate files.
             int shard;
@@ -899,14 +902,14 @@ namespace MurrayGrant.MassiveSort.Actions
             }
 #endif
             // Write the line to the file.
-            var stream = shardFiles[shard];
+            var stream = shardFiles[shard].Stream;
             if (seg.Count > 0)
                 stream.Write(seg.Array, seg.Offset, seg.Count);
             stream.WriteByte(newlineByte);
             lineCounts[shard] = lineCounts[shard] + 1;
         }
 
-        private void ShardWordToFileWithStreamLock(ByteArraySegment seg, int shardSize, FileStream[] shardFiles, long[] lineCounts)
+        private void ShardWordToFileWithStreamLock(ByteArraySegment seg, int shardSize, ShardFile[] shardFiles, long[] lineCounts)
         {
             // The lock makes it highly unlikely to inline this function call, hence why the code is mostly duplicated.
 
@@ -926,7 +929,7 @@ namespace MurrayGrant.MassiveSort.Actions
             }
 #endif
             // Write the line to the file.
-            var stream = shardFiles[shard];
+            var stream = shardFiles[shard].Stream;
             lock (stream)
             {
                 if (seg.Count > 0)
@@ -1322,7 +1325,7 @@ namespace MurrayGrant.MassiveSort.Actions
                 int offset = 0;
                 foreach (var f in fs)
                 {
-                    using (var stream = new FileStream(f.FullPath, FileMode.Open, FileAccess.Read, FileShare.Read))
+                    using (var stream = new FileStream(f.FullPath, FileMode.Open, FileAccess.Read, FileShare.None))
                     {
                         stream.Read(data, offset, (int)f.Length);
                     }
