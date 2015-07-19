@@ -1133,6 +1133,7 @@ namespace MurrayGrant.MassiveSort.Actions
             var duplicatePath = _Conf.OutputFile + ".duplicates";
 
             var allSw = Stopwatch.StartNew();
+            var flushSw = new Stopwatch();
             TimeSpan schedulerOverheadTime;
             using (var output = new FileStream(_Conf.OutputFile, FileMode.Create, FileAccess.Write, FileShare.None, _Conf.OutputBufferSize))
             using (var duplicateOutput = _Conf.SaveDuplicates ? new FileStream(duplicatePath, FileMode.Create, FileAccess.Write, FileShare.None, _Conf.OutputBufferSize) : null)
@@ -1218,11 +1219,14 @@ namespace MurrayGrant.MassiveSort.Actions
                 ).Result;
 
                 // Everything is written, so flush output file.
+                flushSw.Start();
                 output.Flush();
                 if (duplicateOutput != null)
                     duplicateOutput.Flush();
+                flushSw.Stop();
             }
             allSw.Stop();
+            this.WriteStats("Finished writing, final flush took {0:N1}ms.", flushSw.Elapsed.TotalMilliseconds);
 
             var duplicatesRemoved = totalLinesRead - totalLinesWritten;
             var message = String.Format("Finished sorting{0} in {1}\n{2:N0} lines remain.\n", _Conf.LeaveDuplicates ? "" : " and removing duplicates", allSw.Elapsed.ToSizedString(), totalLinesWritten);
