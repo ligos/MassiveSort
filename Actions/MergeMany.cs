@@ -1130,46 +1130,22 @@ namespace MurrayGrant.MassiveSort.Actions
 
             long totalLinesWritten = 0;
             long totalLinesRead = 0;
-            var workCount = _Conf.SortWorkers + _Conf.MaxOutstandingSortedChunks;
-            var workLimiter = new System.Threading.Semaphore(workCount, workCount);
             var duplicatePath = _Conf.OutputFile + ".duplicates";
 
             var allSw = Stopwatch.StartNew();
+            TimeSpan schedulerOverheadTime;
             using (var output = new FileStream(_Conf.OutputFile, FileMode.Create, FileAccess.Write, FileShare.None, _Conf.OutputBufferSize))
             using (var duplicateOutput = _Conf.SaveDuplicates ? new FileStream(duplicatePath, FileMode.Create, FileAccess.Write, FileShare.None, _Conf.OutputBufferSize) : null)
             {
                 // Now sort each chunk.
                 // PERF: can read and sort each chunk in parallel, but must write at the end in the correct sequence.
-
-                // We use a partitioner with only one item in each partition so that we begin each chunk in order.
-                // We can have several in flight at any one time (and that is desirable for parallelism), 
-                // but if we schedule out of order, we can deadlock if our final writer or disk is very slow.
-                var parts = Partitioner.Create(0, sortChunks.Count, 1);
-                var sortedChunks = parts
-                    .AsParallel().AsOrdered()
-                    .WithDegreeOfParallelism(_Conf.SortWorkers)
-                    .WithMergeOptions(ParallelMergeOptions.NotBuffered)
-                    .Select(chIdx =>
-                    {
+                schedulerOverheadTime = 
+                    this.SortAndWriteChunks(sortChunks, 
+                    (ch, chNum) => {
                         if (_CancelToken.IsCancellationRequested) return null;
 
-                        var ch = sortChunks[chIdx.Item1];       // Careful to only read the collection!
-                        var chNum = chIdx.Item1 + 1;
                         var taskKey = new Object();
                         this.WriteStats("Chunk #{0}: starting parallel sort thread.", chNum);
-
-                        // Wait until work has been written to disk.
-                        // In case of very slow disks (eg: USB2 / 10Mb ethernet) we can sort faster than we can write.
-                        // With enough files, this can exhaust virtual memory. Seriously!
-                        // We also need to schedule each chunk in order, because if we get out sync by too many, we can deadlock.
-                        var waitSw = Stopwatch.StartNew();
-                        var waitTime = TimeSpan.FromSeconds(1);
-                        while (!workLimiter.WaitOne(waitTime)) {
-                            // This lets us cancel cleanly if we deadlock here.
-                            if (_CancelToken.IsCancellationRequested) return null;
-                        };
-                        waitSw.Stop();
-                        if (_CancelToken.IsCancellationRequested) return null;
 
                         _Progress.Report(new TaskProgress(String.Format("Sorting chunk {0:N0} ({1} - {2})...", chNum, ch.First().Name, ch.Last().Name), false, taskKey));
                         this.WriteStats("Sorting chunk {0:N0} with {3:N0} files ({1} - {2}: {4:N1}MB, {5:N0} lines)...", chNum, ch.First().Name, ch.Last().Name, ch.Count(), ch.Sum(x => x.Length) / oneMbAsDouble, ch.Sum(x => x.Lines));
@@ -1213,39 +1189,35 @@ namespace MurrayGrant.MassiveSort.Actions
                             taskKey,
                             readTime = readSw.Elapsed,
                             sortTime = sortSw.Elapsed,
-                            waitTime = waitSw.Elapsed,
                             deDupTime = deDupeSw.Elapsed,
                         };
-                    });
+                    }, 
+                    ch => {
+                        if (_CancelToken.IsCancellationRequested) return;
+                        this.WriteStats("Chunk #{0}: on sequential write thread.", ch.chNum);
 
-                foreach (var ch in sortedChunks)
-                {
-                    if (_CancelToken.IsCancellationRequested) { workLimiter.Release(); break; }
-                    this.WriteStats("Chunk #{0}: on sequential write thread.", ch.chNum);
+                        // Remove duplicates and write to disk.
+                        // PERF: this represents ~10% of the time in this loop. It cannot be parallelised.
+                        var writeSw = Stopwatch.StartNew();
+                        var linesWritten = this.WriteToFile(ch.data, output, ch.duplicates, duplicateOutput);
+                        totalLinesWritten += linesWritten;
+                        totalLinesRead += ch.linesRead;
+                        writeSw.Stop();
 
-                    // Remove duplicates and write to disk.
-                    // PERF: this represents ~10% of the time in this loop. It cannot be parallelised.
-                    var writeSw = Stopwatch.StartNew();
-                    var linesWritten = this.WriteToFile(ch.data, output, ch.duplicates, duplicateOutput);
-                    totalLinesWritten += linesWritten;
-                    totalLinesRead += ch.linesRead;
-                    writeSw.Stop();
+                        _Progress.Report(new TaskProgress(" Written.", true, ch.taskKey));
+                        var chTime = ch.readTime + ch.sortTime + ch.deDupTime + writeSw.Elapsed;
+                        this.WriteStats("Chunk #{0}: processed in {1:N2} sec. Read {2:N0} lines in {3:N1}ms, sorted in {4:N1}ms, {7:N0} duplicates removed in {8:N1}ms, wrote {5:N0} lines in {6:N1}ms.", ch.chNum, chTime.TotalSeconds, ch.linesRead, ch.readTime.TotalMilliseconds, ch.sortTime.TotalMilliseconds, linesWritten, writeSw.Elapsed.TotalMilliseconds, ch.linesRead - linesWritten, ch.deDupTime.TotalMilliseconds);
 
-                    // Release the work limiter semaphore.
-                    workLimiter.Release();
+                        // Release references to the large arrays allocated when reading files.
+                        ch.data.Dispose();
+                        if (ch.duplicates != null)
+                            ch.duplicates.Dispose();
+                        if (_Conf.AggressiveMemoryCollection)
+                            GC.Collect();
+                    }
+                ).Result;
 
-                    _Progress.Report(new TaskProgress(" Written.", true, ch.taskKey));
-                    var chTime = ch.readTime + ch.sortTime + ch.deDupTime + writeSw.Elapsed;
-                    this.WriteStats("Chunk #{0}: processed in {1:N2} sec. Waited {2:N1} sec, read {3:N0} lines in {4:N1}ms, sorted in {5:N1}ms, {8:N0} duplicates removed in {9:N1}ms, wrote {6:N0} lines in {7:N1}ms.", ch.chNum, chTime.TotalSeconds, ch.waitTime.TotalSeconds, ch.linesRead, ch.readTime.TotalMilliseconds, ch.sortTime.TotalMilliseconds, linesWritten, writeSw.Elapsed.TotalMilliseconds, ch.linesRead - linesWritten, ch.deDupTime.TotalMilliseconds);
-
-                    // Release references to the large arrays allocated when reading files.
-                    ch.data.Dispose();
-                    if (ch.duplicates != null)
-                        ch.duplicates.Dispose();
-                    if (_Conf.AggressiveMemoryCollection)
-                        GC.Collect();
-                }
-
+                // Everything is written, so flush output file.
                 output.Flush();
                 if (duplicateOutput != null)
                     duplicateOutput.Flush();
@@ -1258,6 +1230,103 @@ namespace MurrayGrant.MassiveSort.Actions
                 message += String.Format("{0:N0} duplicates removed.\n", duplicatesRemoved);
             _Progress.Report(new BasicProgress(message, true));
             this.WriteStats("Finished sorting in {0}. {1:N0} lines remain, {2:N0} duplicates removed.", allSw.Elapsed.ToSizedString(), totalLinesWritten, duplicatesRemoved);
+            this.WriteStats("Sort task scheduling overhead {0:N1}ms. {1:P1} of total sort time.", schedulerOverheadTime.TotalMilliseconds, schedulerOverheadTime.TotalSeconds / allSw.Elapsed.TotalSeconds);
+        }
+
+        private async Task<TimeSpan> SortAndWriteChunks<T>(IList<IEnumerable<FileResult>> chunks, Func<IEnumerable<FileResult>, int, T> sorter, Action<T> writer)
+        {
+            // PLINQ works in most circumstances, but sometimes buffers output (even when asked not to)
+            // which means it can deadlock. So we use our own scheduler logic with raw tasks.
+
+            var totalChunks = chunks.Count();
+            var sortTasks = new Task<T>[Math.Max(_Conf.SortWorkers, 1)];
+            var sortChunkNums = new int[Math.Max(_Conf.SortWorkers, 1)];
+            var writeTasks = new Task[Math.Max(_Conf.MaxOutstandingSortedChunks, 1)];
+            var writeChunkNums = new int[Math.Max(_Conf.MaxOutstandingSortedChunks, 1)];
+
+            if (_CancelToken.IsCancellationRequested) return TimeSpan.Zero;
+
+
+            // Scheduler logic:
+            // - Ensure the sort tasks are always populated and working.
+            // - Ensure exactly one write task is running, which must be issued in order.
+            // - After each task completes (and a regular timeout), check the above remains correct.
+
+            var schedulerOverheadSw = Stopwatch.StartNew();
+            int sortChunkIdx = 0;
+            int writtenChunkNum = 0;
+            do
+            {
+                // Have any of the write tasks completed? 
+                // Note that only one of these should be running at any time.
+                for (int i = 0; i < writeTasks.Length; i++)
+                {
+                    if (writeTasks[i] != null && (writeTasks[i].IsCompleted || writeTasks[i].IsFaulted))
+                    {
+                        // Retire it.
+                        writtenChunkNum = writeChunkNums[i];
+                        writeTasks[i] = null;
+                        writeChunkNums[i] = 0;
+                    }
+                }
+
+                // Move any completed sort tasks to the write queue.
+                var emptyWriteSlots = writeTasks.Count(x => x == null);
+                for (int i = 0; i < sortTasks.Length; i++)
+                {
+                    if (sortTasks[i] != null        // Not empty task.
+                        && (sortTasks[i].IsCompleted || sortTasks[i].IsFaulted)     // Completed task (or faulted).
+                        && sortChunkNums[i] <= writtenChunkNum + emptyWriteSlots)   // Available to fit in .
+                    {
+                        int writeIdx = writeTasks.IndexWhere(t => t == null);
+                        if (writeIdx != -1)
+                        {
+                            // Add write task.
+                            var ch = sortTasks[i].Result;
+                            writeTasks[writeIdx] = new Task(() => writer(ch));      // This is not started just yet.
+                            writeChunkNums[writeIdx] = sortChunkNums[i];
+                            // Retire the sort task.
+                            sortTasks[i] = null;
+                            sortChunkNums[i] = 0;
+                        }
+                    }
+                }
+
+                // If no write tasks are running, and the next one is available, start it.
+                var nextChunkNumToWrite = writtenChunkNum + 1;
+                var nextToWriteIdx = writeChunkNums.IndexWhere(num => num == nextChunkNumToWrite);
+                if (writeTasks.All(ch => ch == null || ch.Status == TaskStatus.Created) && nextToWriteIdx != -1)
+                {
+                    writeTasks[nextToWriteIdx].Start();
+                }
+
+                // If there are any remaining chunks to sort, add and start them.
+                for (int i = 0; i < sortTasks.Length; i++)
+                {
+                    if (sortTasks[i] == null && sortChunkIdx < chunks.Count)
+                    {
+                        var ch = chunks[sortChunkIdx];
+                        var chNum = sortChunkIdx + 1;
+                        sortChunkNums[i] = chNum;
+                        sortTasks[i] = new Task<T>(() => sorter(ch, chNum));
+                        sortTasks[i].Start();            // These are started as soon as they are available.
+                        sortChunkIdx++;
+                    }
+                }
+
+                // Processed all chunks: end of loop.
+                if (writtenChunkNum >= totalChunks)
+                    break;
+
+                // Wait for one of the tasks to complete.
+                schedulerOverheadSw.Stop();
+                await Task.WhenAny(sortTasks.Concat(writeTasks).Where(t => t != null));
+                if (_CancelToken.IsCancellationRequested) return schedulerOverheadSw.Elapsed;
+                schedulerOverheadSw.Start();
+            } while (true);
+
+            schedulerOverheadSw.Stop();
+            return schedulerOverheadSw.Elapsed;
         }
 
         private IList<IEnumerable<FileResult>> SplitIntoChunksForBulkSorting(IEnumerable<FileResult> toSort)

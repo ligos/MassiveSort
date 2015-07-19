@@ -203,6 +203,16 @@ namespace MurrayGrant.MassiveSort
             }
         }
 
+        public static int IndexWhere<T>(this T[] array, Func<T, bool> predicate)
+        {
+            for (int i = 0; i < array.Length; i++)
+            {
+                if (predicate(array[i]))
+                    return i;
+            }
+            return -1;
+        }
+
         public static string ToSizedString(this TimeSpan ts)
         {
             ts = new TimeSpan(Math.Abs(ts.Ticks));
