@@ -22,11 +22,6 @@ See the [wiki for more details](https://bitbucket.org/ligos/massivesort/wiki).
 
 ## Longer Term Goals ##
 
-* Using multiple CPUs / cores.
-* More options:
-    * Trim whitespace
-    * Remove all whitespace
-    * Translate to / from the `$HEX[...]` convention
 * Merge into a central file, with tags
 * Configuration files for source files, so you don't to remember lots of options to import
 * General purpose large scale merge sort on any `IEnumerable<T>`
