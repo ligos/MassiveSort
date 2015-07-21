@@ -1,0 +1,1051 @@
+
+B:\Wordlists\MassiveSort>MassiveSort.exe merge -i b:\Wordlists\mergeTest.large -
+o x:\temp\mergeTest.large.murray.txt -t x:\temp\mergeTemp --save-stats --debug -
+-max-sort-size 128MB
+MassiveSort v0.1.2.0 - Copyright © Murray Grant 2015
+
+Configuration:
+  Max Sort Size: 128 MB
+  Read File Buffer Size: 64 KB
+  Line Buffer Size: 64 KB
+  Temp File Buffer Size: 128 KB
+  Output File Buffer Size: 256 KB
+  Split Workers: 4
+  Sort Workers: 4
+  IO Workers: 8
+  Temp Folder: x:\temp\mergeTemp
+  Max Outstanding Chunks: 2
+  Sort Algorithm: TimSort
+  Comparer: Clr
+  Leave Duplicates: False
+  Save Stats: True
+  Whitespace: NoChange
+  Convert to $HEX[]: False
+
+Estimated Memory Usage:
+  General Overhead: ~20-30MB
+  Split Phase (per worker): 32.3MB
+  Split Phase for 4 worker(s): 129.3MB
+  Sort Phase (per worker): 479.6MB
+  Sort Phase for 4 worker(s): 1,918.3MB
+  Sort Phase for 6 outstanding chunks: 2,877.5MB
+Note on memory usage:
+  .NET uses garbage collection; you may see higher memory use for short times.
+  Consider using --aggressive-memory-collection if you are running out of RAM.
+
+Gathering files to merge from 'b:\Wordlists\mergeTest.large'.
+Splitting 588 file(s) (round 1)...
+Splitting 'realuniq.lst #1'... Done.
+Splitting 'realuniq.lst #2'... Done.
+Splitting 'realuniq.lst #3'... Done.
+Splitting 'realuniq.lst #4'... Done.
+Splitting 'realuniq.lst #5'... Done.
+Splitting 'realuniq.lst #6'... Done.
+Splitting 'realuniq.lst #7'... Done.
+Splitting 'realuniq.lst #8'... Done.
+Splitting 'realuniq.lst #9'... Done.
+Splitting 'realuniq.lst #10'... Done.
+Splitting 'realuniq.lst #11'... Done.
+Splitting 'realuniq.lst #12'... Done.
+Splitting 'realuniq.lst #13'... Done.
+Splitting 'realuniq.lst #14'... Done.
+Splitting 'realuniq.lst #15'... Done.
+Splitting 'realuniq.lst #16'... Done.
+Splitting 'realuniq.lst #17'... Done.
+Splitting 'realuniq.lst #18'... Done.
+Splitting 'realuniq.lst #19'... Done.
+Splitting 'realuniq.lst #20'... Done.
+Splitting 'realuniq.lst #21'... Done.
+Splitting 'realuniq.lst #22'... Done.
+Splitting 'realuniq.lst #23'... Done.
+Splitting 'realuniq.lst #24'... Done.
+Splitting 'realuniq.lst #25'... Done.
+Splitting 'realuniq.lst #26'... Done.
+Splitting 'realuniq.lst #27'... Done.
+Splitting 'realuniq.lst #28'... Done.
+Splitting 'realuniq.lst #29'... Done.
+Splitting 'realuniq.lst #30'... Done.
+Splitting 'realuniq.lst #31'... Done.
+Splitting 'realuniq.lst #32'... Done.
+Splitting 'realuniq.lst #33'... Done.
+Splitting 'realuniq.lst #34'... Done.
+Splitting 'realuniq.lst #35'... Done.
+Splitting 'realuniq.lst #36'... Done.
+Splitting 'realuniq.lst #37'... Done.
+Splitting 'realuniq.lst #38'... Done.
+Splitting 'realuniq.lst #39'... Done.
+Splitting 'realuniq.lst #40'... Done.
+Splitting 'realuniq.lst #41'... Done.
+Splitting 'realuniq.lst #42'... Done.
+Splitting 'realuniq.lst #43'... Done.
+Splitting 'realuniq.lst #44'... Done.
+Splitting 'realuniq.lst #45'... Done.
+Splitting 'realuniq.lst #46'... Done.
+Splitting 'realuniq.lst #47'... Done.
+Splitting 'realuniq.lst #48'... Done.
+Splitting 'realuniq.lst #49'... Done.
+Splitting 'realuniq.lst #50'... Done.
+Splitting 'realuniq.lst #51'... Done.
+Splitting 'realuniq.lst #52'... Done.
+Splitting 'realuniq.lst #53'... Done.
+Splitting 'realuniq.lst #54'... Done.
+Splitting 'realuniq.lst #55'... Done.
+Splitting 'realuniq.lst #56'... Done.
+Splitting 'realuniq.lst #57'... Done.
+Splitting 'realuniq.lst #58'... Done.
+Splitting 'realuniq.lst #59'... Done.
+Splitting 'm3g9tr0n-cmiuc12-CrackedPlains.pot'... Done.
+Splitting 'geonames-combined_combined.txt'... Done.
+Splitting 'The_New_New_Best_Dict-giveen.txt'... Done.
+Splitting 'md5Decrypter.output.utf8.cp1252.txt'... Done.
+Splitting 'Rockyou-passwords.txt'... Done.
+Splitting 'hashkiller.com.dic'... Done.
+Splitting 'usernames_for_md5_email.txt'... Done.
+Splitting 'works.txt'... Done.
+Splitting 'md5Decrypter.passwords.utf8.txt'... Done.
+Splitting 'works_nopunct.txt'... Done.
+Splitting 'geonames-combined.txt'... Done.
+Splitting 'works_nopunct_lower.txt'... Done.
+Splitting 'works_nospace.txt'... Done.
+Splitting 'geonames-combined_nopunct.txt'... Done.
+Splitting 'geonames-combined_nopunct_lower.txt'... Done.
+Splitting 'works_nospace_lower.txt'... Done.
+Splitting 'geonames-combined_nospace.txt'... Done.
+Splitting 'works_nopunct_nospace.txt'... Done.
+Splitting 'geonames-combined_nopunct_nospace.txt'... Done.
+Splitting 'geonames-combined_nospace_lower.txt'... Done.
+Splitting 'geonames-combined_nopunct_nospace_lower.txt'... Done.
+Splitting 'works_nopunct_nospace_lower.txt'... Done.
+Splitting '10-million-combos.flat-unique.txt'... Done.
+Splitting 'md5this.dictionary_numbers_1-7.dic'... Done.
+Splitting 'google-ngrams2012.dic'... Done.
+Splitting 'md5this.dictionary_two_words.dic'... Done.
+Splitting 'Insidepro-languages-cp1252.dic'... Done.
+Splitting 'enwiktionary-20140522-all-titles_cleaned_combined.txt'... Done.
+Splitting 'md5this.dictionary_russian.dic'... Done.
+Splitting 'facebook-lastnames.dic'... Done.
+Splitting 'GDict.dic'... Done.
+Splitting 'Insidepro-languages-cp1250.dic'... Done.
+Splitting 'enwiktionary-20140522-all-titles_cleaned.txt'... Done.
+Splitting 'enwiktionary-20140522-all-titles_cleaned_nopunct.txt'... Done.
+Splitting 'enwiktionary-20140522-all-titles_cleaned_nospace.txt'... Done.
+Splitting 'enwiktionary-20140522-all-titles_cleaned_nopunct_lower.txt'... Done.
+Splitting 'enwiktionary-20140522-all-titles_cleaned_nospace_lower.txt'... Done.
+Splitting 'enwiktionary-20140522-all-titles_cleaned_nopunct_nospace.txt'... Done
+.plitting 'enwiktionary-20140522-all-titles_cleaned_nopunct_nospace_lower.txt'..
+. Done.
+Splitting 'Insidepro-languages-utf8.dic'... Done.
+Splitting 'all.lst'... Done.
+Splitting 'facebook-firstnames.dic'... Done.
+Splitting 'Insidepro-languages-cp1251.dic'... Done.
+Splitting 'actors-characters.txt'... Done.
+Splitting 'actors-characters_nopunct.txt'... Done.
+Splitting 'actors-characters_nopunct_lower.txt'... Done.
+Splitting 'actors-characters_nospace.txt'... Done.
+Splitting 'actors-characters_nospace_lower.txt'... Done.
+Splitting 'actors-characters_nopunct_nospace.txt'... Done.
+Splitting 'actors-characters_nopunct_nospace_lower.txt'... Done.
+Splitting 'Insidepro-languages-cp1251-2.dic'... Done.
+Splitting 'Insidepro-languages-cp866.dic'... Done.
+Splitting 'Insidepro-languages-koi8r.dic'... Done.
+Splitting 'md5this.dictionary_huge_s.dic'... Done.
+Splitting 'antichat.ru.dic'... Done.
+Splitting 'md5this.dictionary_huge_c.dic'... Done.
+Splitting 'actors.txt'... Done.
+Splitting 'actors_nopunct.txt'... Done.
+Splitting 'actors_nopunct_lower.txt'... Done.
+Splitting 'md5this.dictionary_misc_sorted.dic'... Done.
+Splitting 'md5this.dictionary_huge_p.dic'... Done.
+Splitting 'actors_nospace.txt'... Done.
+Splitting 'actors_nospace_lower.txt'... Done.
+Splitting 'actors_nopunct_nospace.txt'... Done.
+Splitting 'actors_nopunct_nospace_lower.txt'... Done.
+Splitting 'md5this.dictionary_german.dic'... Done.
+Splitting 'movies.txt'... Done.
+Splitting 'movies_nopunct.txt'... Done.
+Splitting 'movies_nopunct_lower.txt'... Done.
+Splitting 'actress-characters.txt'... Done.
+Splitting 'md5this.dictionary_huge_r.dic'... Done.
+Splitting 'md5this.dictionary_huge_d.dic'... Done.
+Splitting 'actress-characters_nopunct.txt'... Done.
+Splitting 'actress-characters_nopunct_lower.txt'... Done.
+Splitting 'md5this.dictionary_huge_m.dic'... Done.
+Splitting 'md5this.dictionary_huge_a.dic'... Done.
+Splitting 'actress-characters_nospace.txt'... Done.
+Splitting 'actress-characters_nospace_lower.txt'... Done.
+Splitting 'md5this.dictionary_huge_b.dic'... Done.
+Splitting 'actress-characters_nopunct_nospace.txt'... Done.
+Splitting 'actress-characters_nopunct_nospace_lower.txt'... Done.
+Splitting 'movies_nospace.txt'... Done.
+Splitting 'movies_nospace_lower.txt'... Done.
+Splitting 'movies_nopunct_nospace.txt'... Done.
+Splitting 'movies_nopunct_nospace_lower.txt'... Done.
+Splitting 'md5this.dictionary_huge_1.dic'... Done.
+Splitting 'thematic.dic'... Done.
+Splitting 'md5this.dictionary_huge_t.dic'... Done.
+Splitting 'actresses.txt'... Done.
+Splitting 'actresses_nopunct.txt'... Done.
+Splitting 'actresses_nopunct_lower.txt'... Done.
+Splitting 'Common-passwords.dic'... Done.
+Splitting 'md5this.dictionary_huge_5.dic'... Done.
+Splitting 'artists.txt'... Done.
+Splitting 'actresses_nospace.txt'... Done.
+Splitting 'actresses_nospace_lower.txt'... Done.
+Splitting 'actresses_nopunct_nospace.txt'... Done.
+Splitting 'actresses_nopunct_nospace_lower.txt'... Done.
+Splitting 'artists_nopunct.txt'... Done.
+Splitting 'artists_nopunct_lower.txt'... Done.
+Splitting 'md5this.dictionary_norwegian.dic'... Done.
+Splitting 'md5this.dictionary_huge_8.dic'... Done.
+Splitting 'md5this.dictionary_huge_4.dic'... Done.
+Splitting 'md5this.dictionary_huge_0.dic'... Done.
+Splitting 'md5this.dictionary_huge_3.dic'... Done.
+Splitting 'md5this.dictionary_huge_f.dic'... Done.
+Splitting 'artists_nospace.txt'... Done.
+Splitting 'artists_nospace_lower.txt'... Done.
+Splitting 'artists_nopunct_nospace.txt'... Done.
+Splitting 'md5this.dictionary_huge_e.dic'... Done.
+Splitting 'artists_nopunct_nospace_lower.txt'... Done.
+Splitting 'md5this.dictionary_huge_7.dic'... Done.
+Splitting 'md5this.dictionary_huge_9.dic'... Done.
+Splitting 'md5this.dictionary_huge_spec.dic'... Done.
+Splitting 'md5this.dictionary_huge_h.dic'... Done.
+Splitting 'md5this.dictionary_huge_n.dic'... Done.
+Splitting 'md5this.dictionary_huge_g.dic'... Done.
+Splitting 'md5this.dictionary_huge_2.dic'... Done.
+Splitting 'md5this.dictionary_huge_6.dic'... Done.
+Splitting 'md5this.dictionary_huge_l.dic'... Done.
+Splitting 'md5this.dictionary_huge_i.dic'... Done.
+Splitting 'md5this.Names.dic'... Done.
+Splitting 'md5this.dictionary_danish.dic'... Done.
+Splitting 'youporn.dic'... Done.
+Splitting 'md5this.dictionary_huge_o.dic'... Done.
+Splitting 'md5this.dictionary_huge_u.dic'... Done.
+Splitting 'md5this.dictionary_huge_w.dic'... Done.
+Splitting 'md5this.dictionary_huge_k.dic'... Done.
+Splitting 'md5this.dictionary_huge_v.dic'... Done.
+Splitting '62kcmnpass.dic'... Done.
+Splitting 'enwikibooks-20140606-all-titles_cleaned_combined.txt'... Done.
+Splitting 'md5this.dictionary_huge_j.dic'... Done.
+Splitting 'md5this.dictionary_finnish.dic'... Done.
+Splitting 'md5this.Misc.dic'... Done.
+Splitting 'md5this.dictionary_spanish.dic'... Done.
+Splitting 'md5this.dictionary_italian.dic'... Done.
+Splitting 'yahoo-passwords.txt'... Done.
+Splitting 'md5this.Abbreviations.dic'... Done.
+Splitting 'md5this.dictionary_french.dic'... Done.
+Splitting 'md5this.dictionary_english.dic'... Done.
+Splitting 'CainAndAbel.dic'... Done.
+Splitting 'md5this.dictionary_czech.dic'... Done.
+Splitting 'md5this.dictionary_dutch.dic'... Done.
+Splitting 'freerainbowtables.com.dic'... Done.
+Splitting 'english-words.95'... Done.
+Splitting 'md5this.dictionary_swedish.dic'... Done.
+Splitting 'md5this.Unabr.dic'... Done.
+Splitting 'md5this.dictionary_huge_z.dic'... Done.
+Splitting 'md5this.Usenet.dic'... Done.
+Splitting 'InsidePro-Mini.dic'... Done.
+Splitting 'md5this.Crack.dic'... Done.
+Splitting 'enwikibooks-20140606-all-titles_cleaned.txt'... Done.
+Splitting 'enwikibooks-20140606-all-titles_cleaned_nopunct.txt'... Done.
+Splitting 'enwikibooks-20140606-all-titles_cleaned_nopunct_lower.txt'... Done.
+Splitting 'md5this.Numbers.dic'... Done.
+Splitting 'md5this.dictionary_huge_y.dic'... Done.
+Splitting 'enwikibooks-20140606-all-titles_cleaned_nospace.txt'... Done.
+Splitting 'enwikibooks-20140606-all-titles_cleaned_nospace_lower.txt'... Done.
+Splitting 'english-words.80'... Done.
+Splitting 'md5this.dictionary_africaan.dic'... Done.
+Splitting 'enwikibooks-20140606-all-titles_cleaned_nopunct_nospace.txt'... Done.
+Splitting 'enwikibooks-20140606-all-titles_cleaned_nopunct_nospace_lower.txt'...
+ Done.
+Splitting 'md5this.dictionary_brazilian.dic'... Done.
+Splitting 'labels.txt'... Done.
+Splitting 'labels_nopunct.txt'... Done.
+Splitting 'labels_nopunct_lower.txt'... Done.
+Splitting 'md5this.dictionary_huge_q.dic'... Done.
+Splitting 'labels_nospace.txt'... Done.
+Splitting 'labels_nospace_lower.txt'... Done.
+Splitting 'md5this.Army.dic'... Done.
+Splitting 'labels_nopunct_nospace.txt'... Done.
+Splitting 'md5this.Knuth.dic'... Done.
+Splitting 'labels_nopunct_nospace_lower.txt'... Done.
+Splitting 'books.txt'... Done.
+Splitting 'books_nopunct.txt'... Done.
+Splitting 'books_nopunct_lower.txt'... Done.
+Splitting 'HashcatDict.dic'... Done.
+Splitting 'md5this.dictionary_polish.dic'... Done.
+Splitting 'md5this.Ospd.dic'... Done.
+Splitting 'books_nospace.txt'... Done.
+Splitting 'books_nospace_lower.txt'... Done.
+Splitting 'books_nopunct_nospace.txt'... Done.
+Splitting 'books_nopunct_nospace_lower.txt'... Done.
+Splitting 'md5this.WebsterPhrases.dic'... Done.
+Splitting 'md5this.dictionary_latin.dic'... Done.
+Splitting 'md5this.dictionary_japanese.dic'... Done.
+Splitting 'md5this.Antworth.dic'... Done.
+Splitting 'md5this.dictionary_australian.dic'... Done.
+Splitting 'md5this.Crl.dic'... Done.
+Splitting 'english-proper-names.95'... Done.
+Splitting '12dicst.2of12inf.txt'... Done.
+Splitting 'D8Dict.DIC'... Done.
+Splitting 'milw0rm.com.dic'... Done.
+Splitting 'md5this.Scifi.dic'... Done.
+Splitting 'md5this.AT_T.dic'... Done.
+Splitting 'md5this.Science.dic'... Done.
+Splitting '12dicst.2of4brif.txt'... Done.
+Splitting '12dicst.5desk.txt'... Done.
+Splitting 'md5this.dictionary_huge_x.dic'... Done.
+Splitting 'md5this.Movies.dic'... Done.
+Splitting 'md5this.Cis.dic'... Done.
+Splitting 'md5this.Phonenums.dic'... Done.
+Splitting 'md5this.Music.dic'... Done.
+Splitting '12dicst.2of12.txt'... Done.
+Splitting 'md5this.Businessname.dic'... Done.
+Splitting 'md5this.Internet.dic'... Done.
+Splitting 'md5this.Statistics.dic'... Done.
+Splitting 'md5this.Minix.dic'... Done.
+Splitting 'english-words.70'... Done.
+Splitting 'md5this.Mts.dic'... Done.
+Splitting 'english-words.35'... Done.
+Splitting 'md5this.dictionary_portuguese.dic'... Done.
+Splitting 'md5this.Ethnologue.dic'... Done.
+Splitting '12dicst.6of12.txt'... Done.
+Splitting 'md5this.Rock.dic'... Done.
+Splitting 'md5this.Hack.dic'... Done.
+Splitting 'md5this.Unix.dic'... Done.
+Splitting 'english-proper-names.80'... Done.
+Splitting 'md5this.dictionary_croatian.dic'... Done.
+Splitting 'plain-text.info.dic'... Done.
+Splitting 'english-words.50'... Done.
+Splitting 'md5this.Hosts.dic'... Done.
+Splitting 'md5this.dictionary_turkish.dic'... Done.
+Splitting 'md5this.GNU.dic'... Done.
+Splitting 'md5this.BSD.dic'... Done.
+Splitting 'md5this.Actor.dic'... Done.
+Splitting 'md5this.dictionary_swahili.dic'... Done.
+Splitting '12dicst.3esl.txt'... Done.
+Splitting 'md5this.Pockt.dic'... Done.
+Splitting 'md5this.Roget.dic'... Done.
+Splitting 'md5this.dictionary_hungarian.dic'... Done.
+Splitting 'authors.txt'... Done.
+Splitting 'authors_nopunct.txt'... Done.
+Splitting 'authors_nopunct_lower.txt'... Done.
+Splitting 'md5this.Zipcodes.dic'... Done.
+Splitting 'authors_nospace.txt'... Done.
+Splitting 'authors_nospace_lower.txt'... Done.
+Splitting 'md5this.dictionary_fungi.dic'... Done.
+Splitting 'authors_nopunct_nospace.txt'... Done.
+Splitting 'authors_nopunct_nospace_lower.txt'... Done.
+Splitting 'md5this.Bible.dic'... Done.
+Splitting 'RandomGamingForum.10.usernames.dic'... Done.
+Splitting 'english-words.60'... Done.
+Splitting 'RandomGamingForum.11.usernames.dic'... Done.
+Splitting 'RandomGamingForum.6.usernames.dic'... Done.
+Splitting 'md5this.EtcHosts.dic'... Done.
+Splitting 'md5this.World.dic'... Done.
+Splitting 'places.txt'... Done.
+Splitting 'places_nopunct.txt'... Done.
+Splitting 'places_nopunct_lower.txt'... Done.
+Splitting 'NatoBookshop.dic'... Done.
+Splitting 'md5this.Literature.dic'... Done.
+Splitting 'places_nospace.txt'... Done.
+Splitting 'places_nospace_lower.txt'... Done.
+Splitting 'places_nopunct_nospace.txt'... Done.
+Splitting 'places_nopunct_nospace_lower.txt'... Done.
+Splitting 'md5this.Jargon.dic'... Done.
+Splitting 'md5this.Bacteria.dic'... Done.
+Splitting 'md5this.Foldoc.dic'... Done.
+Splitting 'english-words.20'... Done.
+Splitting 'english-upper.50'... Done.
+Splitting 'md5this.Junk.dic'... Done.
+Splitting 'english-words.40'... Done.
+Splitting 'english-proper-names.50'... Done.
+Splitting 'english-upper.80'... Done.
+Splitting 'english-words.55'... Done.
+Splitting 'md5this.Criminal.dic'... Done.
+Splitting 'md5this.Tech.dic'... Done.
+Splitting 'british-words.80'... Done.
+Splitting 'british_z-words.80'... Done.
+Splitting 'canadian-words.80'... Done.
+Splitting 'american-words.80'... Done.
+Splitting 'english-upper.70'... Done.
+Splitting 'md5this.Paradise.dic'... Done.
+Splitting 'md5this.Beale.dic'... Done.
+Splitting 'british-words.95'... Done.
+Splitting 'md5this.Drugs.dic'... Done.
+Splitting 'british_z-words.95'... Done.
+Splitting 'canadian-words.95'... Done.
+Splitting 'md5this.Bomb.dic'... Done.
+Splitting 'american-words.95'... Done.
+Splitting 'english-words.10'... Done.
+Splitting 'md5this.Brithumor.dic'... Done.
+Splitting 'md5this.Pathology.dic'... Done.
+Splitting 'md5this.Asteroids.dic'... Done.
+Splitting 'md5this.Python.dic'... Done.
+Splitting 'md5this.Algae.dic'... Done.
+Splitting 'english-upper.95'... Done.
+Splitting 'JohnRipperDict.dic'... Done.
+Splitting 'md5this.Common.dic'... Done.
+Splitting 'english-abbreviations.95'... Done.
+Splitting 'md5this.Shakespeare.dic'... Done.
+Splitting 'md5this.Sexual.dic'... Done.
+Splitting 'md5this.Acronyms.dic'... Done.
+Splitting 'md5this.Koran.dic'... Done.
+Splitting 'md5this.LCarrol.dic'... Done.
+Splitting 'RandomGamingForum.4.usernames.dic'... Done.
+Splitting 'british-words.70'... Done.
+Splitting 'british_z-words.70'... Done.
+Splitting 'canadian-words.70'... Done.
+Splitting 'american-words.70'... Done.
+Splitting 'md5this.Oz.dic'... Done.
+Splitting 'english-proper-names.70'... Done.
+Splitting 'special-hacker.50'... Done.
+Splitting 'md5this.US.dic'... Done.
+Splitting 'RandomGamingForum.2.usernames.dic'... Done.
+Splitting 'md5this.Rsk.dic'... Done.
+Splitting 'md5this.Myths.dic'... Done.
+Splitting 'md5this.Fable.dic'... Done.
+Splitting 'md5this.Languages.dic'... Done.
+Splitting 'british-words.35'... Done.
+Splitting 'british_z-words.35'... Done.
+Splitting 'md5this.Cartoons.dic'... Done.
+Splitting 'canadian-words.35'... Done.
+Splitting 'md5this.dictionary_hindu.dic'... Done.
+Splitting 'american-words.35'... Done.
+Splitting 'md5this.Aeneid.dic'... Done.
+Splitting 'british-words.50'... Done.
+Splitting 'british_z-words.50'... Done.
+Splitting 'canadian-words.50'... Done.
+Splitting 'american-words.50'... Done.
+Splitting 'md5this.Phrases.dic'... Done.
+Splitting 'md5this.Iliad.dic'... Done.
+Splitting 'variant_1-words.35'... Done.
+Splitting 'RandomGamingForum.1.usernames.dic'... Done.
+Splitting 'md5this.Sports.dic'... Done.
+Splitting 'RandomGamingForum.8.usernames.dic'... Done.
+Splitting 'variant_1-words.80'... Done.
+Splitting 'md5this.Arthur.dic'... Done.
+Splitting 'english-upper.60'... Done.
+Splitting 'british-words.60'... Done.
+Splitting 'british_z-words.60'... Done.
+Splitting 'instruments.txt'... Done.
+Splitting 'canadian-words.60'... Done.
+Splitting 'instruments_nopunct.txt'... Done.
+Splitting 'instruments_nopunct_lower.txt'... Done.
+Splitting 'american-words.60'... Done.
+Splitting 'md5this.Microalgae.dic'... Done.
+Splitting 'canadian_variant_1-words.80'... Done.
+Splitting 'md5this.Fantasy.dic'... Done.
+Splitting 'british_variant_1-words.80'... Done.
+Splitting 'instruments_nospace.txt'... Done.
+Splitting 'instruments_nospace_lower.txt'... Done.
+Splitting 'instruments_nopunct_nospace.txt'... Done.
+Splitting 'instruments_nopunct_nospace_lower.txt'... Done.
+Splitting 'md5this.Pped.dic'... Done.
+Splitting 'md5this.Places.dic'... Done.
+Splitting 'british-proper-names.95'... Done.
+Splitting 'british_z-proper-names.95'... Done.
+Splitting 'canadian-proper-names.95'... Done.
+Splitting 'american-proper-names.95'... Done.
+Splitting 'variant_1-words.50'... Done.
+Splitting 'canadian_variant_0-words.35'... Done.
+Splitting 'md5this.Congress.dic'... Done.
+Splitting 'md5this.Sindarin.dic'... Done.
+Splitting 'RandomGamingForum.3.usernames.dic'... Done.
+Splitting 'md5this.dictionary_chinese.dic'... Done.
+Splitting 'canadian_variant_1-words.50'... Done.
+Splitting 'british_variant_1-words.50'... Done.
+Splitting 'RandomGamingForum.3.passwords.dic'... Done.
+Splitting 'canadian_variant_1-words.35'... Done.
+Splitting 'md5this.Trek.dic'... Done.
+Splitting 'english-upper.40'... Done.
+Splitting 'md5this.Dosref.dic'... Done.
+Splitting 'variant_0-words.35'... Done.
+Splitting 'md5this.Famous.dic'... Done.
+Splitting 'md5this.Odyssey.dic'... Done.
+Splitting 'md5this.Tolkien.dic'... Done.
+Splitting 'british_variant_1-words.35'... Done.
+Splitting 'md5this.Charlema.dic'... Done.
+Splitting 'variant_0-words.50'... Done.
+Splitting 'md5this.Geography.dic'... Done.
+Splitting 'md5this.Worm.dic'... Done.
+Splitting 'canadian-proper-names.80'... Done.
+Splitting 'british_z-proper-names.80'... Done.
+Splitting 'british-proper-names.80'... Done.
+Splitting 'md5this.Domains.dic'... Done.
+Splitting 'american-proper-names.80'... Done.
+Splitting 'canadian_variant_0-words.50'... Done.
+Splitting 'md5this.Booze.dic'... Done.
+Splitting 'md5this.Bad.dic'... Done.
+Splitting 'md5this.Norse.dic'... Done.
+Splitting 'variant_1-words.70'... Done.
+Splitting 'british-words.40'... Done.
+Splitting 'british_z-words.40'... Done.
+Splitting 'canadian-words.40'... Done.
+Splitting 'american-words.55'... Done.
+Splitting 'british-words.55'... Done.
+Splitting 'british_z-words.55'... Done.
+Splitting 'canadian-words.55'... Done.
+Splitting 'american-words.40'... Done.
+Splitting 'british_variant_0-words.50'... Done.
+Splitting 'canadian_variant_1-words.70'... Done.
+Splitting 'british_variant_1-words.70'... Done.
+Splitting 'british_variant_0-words.35'... Done.
+Splitting 'md5this.Dogs.dic'... Done.
+Splitting 'english-abbreviations.70'... Done.
+Splitting 'variant_1-words.60'... Done.
+Splitting 'british_z-upper.80'... Done.
+Splitting 'canadian-upper.80'... Done.
+Splitting 'british-upper.80'... Done.
+Splitting 'american-upper.80'... Done.
+Splitting 'md5this.Animals.dic'... Done.
+Splitting 'british-words.20'... Done.
+Splitting 'variant_0-words.60'... Done.
+Splitting 'variant_1-words.95'... Done.
+Splitting 'canadian_variant_0-words.60'... Done.
+Splitting 'british_z-words.20'... Done.
+Splitting 'canadian_variant_1-words.60'... Done.
+Splitting 'canadian-words.20'... Done.
+Splitting 'british_variant_1-words.95'... Done.
+Splitting 'canadian_variant_1-words.95'... Done.
+Splitting 'british_variant_1-words.60'... Done.
+Splitting 'english-upper.35'... Done.
+Splitting 'english-abbreviations.60'... Done.
+Splitting 'american-words.20'... Done.
+Splitting 'RandomGamingForum.5.usernames.dic'... Done.
+Splitting 'english-abbreviations.50'... Done.
+Splitting 'british_variant_0-words.60'... Done.
+Splitting 'variant_1-words.40'... Done.
+Splitting 'md5this.Colleges.dic'... Done.
+Splitting 'md5this.Viruses.dic'... Done.
+Splitting 'canadian_variant_0-words.80'... Done.
+Splitting 'RandomGamingForum.9.usernames.dic'... Done.
+Splitting 'english-abbreviations.80'... Done.
+Splitting 'british_variant_1-upper.70'... Done.
+Splitting 'variant_1-upper.70'... Done.
+Splitting 'canadian_variant_1-upper.70'... Done.
+Splitting 'variant_2-words.35'... Done.
+Splitting 'md5this.Surnames.dic'... Done.
+Splitting 'variant_1-words.55'... Done.
+Splitting 'variant_0-words.80'... Done.
+Splitting 'british_variant_1-words.40'... Done.
+Splitting 'canadian_variant_0-words.55'... Done.
+Splitting 'canadian_variant_1-words.40'... Done.
+Splitting 'british_variant_1-words.55'... Done.
+Splitting 'canadian_variant_1-words.55'... Done.
+Splitting 'variant_0-words.55'... Done.
+Splitting 'variant_0-words.40'... Done.
+Splitting 'english-contractions.95'... Done.
+Splitting 'variant_2-words.50'... Done.
+Splitting 'variant_2-words.80'... Done.
+Splitting 'canadian_variant_0-words.40'... Done.
+Splitting 'variant_1-words.20'... Done.
+Splitting 'variant_1-upper.50'... Done.
+Splitting 'british_variant_0-words.55'... Done.
+Splitting 'british_variant_0-words.80'... Done.
+Splitting 'md5this.dictionary_yiddish.dic'... Done.
+Splitting 'british_variant_1-upper.50'... Done.
+Splitting 'canadian_variant_0-words.20'... Done.
+Splitting 'canadian_variant_1-upper.50'... Done.
+Splitting 'british_variant_0-words.40'... Done.
+Splitting 'variant_2-words.55'... Done.
+Splitting 'british_z-upper.70'... Done.
+Splitting 'canadian-upper.70'... Done.
+Splitting 'british-upper.70'... Done.
+Splitting 'md5this.Purdue.dic'... Done.
+Splitting 'american-upper.70'... Done.
+Splitting 'canadian_variant_0-words.70'... Done.
+Splitting 'variant_0-words.20'... Done.
+Splitting 'british_variant_1-upper.80'... Done.
+Splitting 'variant_1-upper.80'... Done.
+Splitting 'canadian_variant_1-upper.80'... Done.
+Splitting 'variant_0-words.70'... Done.
+Splitting 'md5this.Biology.dic'... Done.
+Splitting 'british_variant_1-upper.60'... Done.
+Splitting 'canadian_variant_1-upper.60'... Done.
+Splitting 'english-abbreviations.40'... Done.
+Splitting 'variant_1-upper.60'... Done.
+Splitting 'english-contractions.80'... Done.
+Splitting 'md5this.Year.dic'... Done.
+Splitting 'variant_2-words.70'... Done.
+Splitting 'RandomGamingForum.7.usernames.dic'... Done.
+Splitting 'variant_2-words.95'... Done.
+Splitting 'canadian_variant_0-upper.60'... Done.
+Splitting 'variant_0-upper.60'... Done.
+Splitting 'british_variant_1-upper.95'... Done.
+Splitting 'canadian_variant_1-upper.95'... Done.
+Splitting 'variant_1-upper.95'... Done.
+Splitting 'british_variant_0-upper.60'... Done.
+Splitting 'british-words.10'... Done.
+Splitting 'variant_2-words.60'... Done.
+Splitting 'british_z-words.10'... Done.
+Splitting 'british_variant_0-words.20'... Done.
+Splitting 'british_z-upper.95'... Done.
+Splitting 'british-upper.95'... Done.
+Splitting 'canadian-upper.95'... Done.
+Splitting 'canadian-words.10'... Done.
+Splitting 'american-upper.95'... Done.
+Splitting 'special-roman-numerals.35'... Done.
+Splitting 'md5this.Cars.dic'... Done.
+Splitting 'canadian_variant_0-words.95'... Done.
+Splitting 'canadian_variant_0-upper.50'... Done.
+Splitting 'british_variant_0-upper.50'... Done.
+Splitting 'variant_0-upper.50'... Done.
+Splitting 'american-words.10'... Done.
+Splitting 'variant_2-words.40'... Done.
+Splitting 'variant_0-words.95'... Done.
+Splitting 'british_variant_1-words.20'... Done.
+Splitting 'canadian_variant_1-words.20'... Done.
+Splitting 'british_variant_0-words.95'... Done.
+Splitting 'variant_2-words.20'... Done.
+Splitting 'english-abbreviations.35'... Done.
+Splitting 'british_variant_0-words.70'... Done.
+Splitting 'english-contractions.40'... Done.
+Splitting 'variant_1-words.10'... Done.
+Splitting 'british-upper.50'... Done.
+Splitting 'british_z-upper.50'... Done.
+Splitting 'canadian-upper.50'... Done.
+Splitting 'american-upper.50'... Done.
+Splitting 'variant_0-words.10'... Done.
+Splitting 'md5this.Ego.dic'... Done.
+Splitting 'md5this.ComputerCompanies.dic'... Done.
+Splitting 'british_variant_0-upper.95'... Done.
+Splitting 'variant_0-upper.95'... Done.
+Splitting 'canadian_variant_0-words.10'... Done.
+Splitting 'canadian_variant_0-upper.95'... Done.
+Splitting 'british_variant_0-upper.80'... Done.
+Splitting 'variant_0-upper.80'... Done.
+Splitting 'canadian_variant_0-upper.80'... Done.
+Splitting 'md5this.GreekLetters.dic'... Done.
+Splitting 'english-contractions.50'... Done.
+Splitting 'english-contractions.70'... Done.
+Splitting 'british_variant_0-words.10'... Done.
+Splitting 'english-upper.10'... Done.
+Splitting 'english-contractions.10'... Done.
+Splitting 'variant_2-words.10'... Done.
+Splitting 'english-abbreviations.55'... Done.
+Splitting 'canadian_variant_1-contractions.50'... Done.
+Splitting 'english-contractions.60'... Done.
+Splitting 'british_variant_1-contractions.50'... Done.
+Splitting 'british_variant_1-upper.40'... Done.
+Splitting 'variant_1-contractions.50'... Done.
+Splitting 'canadian_variant_1-upper.40'... Done.
+Splitting 'variant_1-upper.40'... Done.
+Splitting 'british_variant_1-words.10'... Done.
+Splitting 'canadian_variant_1-words.10'... Done.
+Splitting 'british_variant_0-upper.40'... Done.
+Splitting 'canadian_variant_0-upper.40'... Done.
+Splitting 'variant_0-upper.40'... Done.
+Splitting 'british_variant_0-upper.35'... Done.
+Splitting 'canadian_variant_0-upper.35'... Done.
+Splitting 'british-abbreviations.70'... Done.
+Splitting 'british_z-abbreviations.70'... Done.
+Splitting 'canadian-abbreviations.70'... Done.
+Splitting 'english-contractions.35'... Done.
+Splitting 'british_variant_0-upper.70'... Done.
+Splitting 'variant_0-upper.70'... Done.
+Splitting 'british-upper.60'... Done.
+Splitting 'british_z-upper.60'... Done.
+Splitting 'canadian-upper.60'... Done.
+Splitting 'american-upper.60'... Done.
+Splitting 'english-proper-names.40'... Done.
+Splitting 'american-abbreviations.70'... Done.
+Splitting 'american-upper.35'... Done.
+Splitting 'british_variant_0-contractions.50'... Done.
+Splitting 'canadian_variant_0-contractions.50'... Done.
+Splitting 'canadian_variant_0-upper.70'... Done.
+Splitting 'variant_0-contractions.50'... Done.
+Splitting 'english-proper-names.35'... Done.
+Splitting 'variant_0-upper.35'... Done.
+Splitting 'variant_2-upper.95'... Done.
+Splitting 'british_variant_1-abbreviations.70'... Done.
+Splitting 'canadian_variant_1-abbreviations.70'... Done.
+Splitting 'english-abbreviations.20'... Done.
+Splitting 'variant_1-abbreviations.70'... Done.
+Splitting 'british-abbreviations.95'... Done.
+Splitting 'british_z-abbreviations.95'... Done.
+Splitting 'canadian-abbreviations.95'... Done.
+Splitting 'british_variant_1-contractions.70'... Done.
+Splitting 'british_variant_1-upper.35'... Done.
+Splitting 'variant_1-contractions.70'... Done.
+Splitting 'canadian_variant_1-contractions.70'... Done.
+Splitting 'canadian_variant_1-upper.35'... Done.
+Splitting 'variant_1-upper.35'... Done.
+Splitting 'british_variant_0-proper-names.35'... Done.
+Splitting 'british_variant_1-contractions.60'... Done.
+Splitting 'canadian_variant_0-proper-names.35'... Done.
+Splitting 'canadian_variant_1-contractions.60'... Done.
+Splitting 'variant_0-proper-names.35'... Done.
+Splitting 'variant_1-contractions.60'... Done.
+Splitting 'variant_2-upper.40'... Done.
+Splitting 'english-proper-names.60'... Done.
+Splitting 'british-abbreviations.80'... Done.
+Splitting 'british_z-abbreviations.80'... Done.
+Splitting 'canadian-abbreviations.80'... Done.
+Splitting 'english-abbreviations.10'... Done.
+Flushing data to temp files... Done
+Splitting 57 file(s) (round 2)...
+Splitting '73.txt'... Done.
+Splitting '61.txt'... Done.
+Splitting '63.txt'... Done.
+Splitting '74.txt'... Done.
+Flushing data to temp files... Done
+Splitting 'e3.txt'... Done.
+Flushing data to temp files... Done
+Flushing data to temp files... Done
+Splitting '6d.txt'... Done.
+Splitting '31.txt'... Done.
+Flushing data to temp files... Done
+Splitting '72.txt'... Done.
+Flushing data to temp files... Done
+Splitting '64.txt'... Done.
+Flushing data to temp files... Done
+Flushing data to temp files... Done
+Splitting '62.txt'... Done.
+Splitting '41.txt'... Done.
+Flushing data to temp files... Done
+Splitting '43.txt'... Done.
+Flushing data to temp files... Done
+Splitting '70.txt'... Done.
+Flushing data to temp files... Done
+Flushing data to temp files... Done
+Splitting '32.txt'... Done.
+Splitting '42.txt'... Done.
+Flushing data to temp files... Done
+Splitting '6c.txt'... Done.
+Flushing data to temp files... Done
+Splitting '44.txt'... Done.
+Flushing data to temp files... Done
+Splitting '53.txt'... Done.
+Flushing data to temp files... Done
+Splitting '65.txt'... Done.
+Flushing data to temp files... Done
+Splitting '35.txt'... Done.
+Flushing data to temp files... Done
+Flushing data to temp files... Done
+Flushing data to temp files... Done
+Splitting '6a.txt'... Done.
+Splitting '68.txt'... Done.
+Splitting '38.txt'... Done.
+Flushing data to temp files... Done
+Splitting '39.txt'... Done.
+Flushing data to temp files... Done
+Flushing data to temp files... Done
+Flushing data to temp files... Done
+Splitting '6b.txt'... Done.
+Splitting '37.txt'... Done.
+Splitting '36.txt'... Done.
+Flushing data to temp files... Done
+Splitting '67.txt'... Done.
+Flushing data to temp files... Done
+Flushing data to temp files... Done
+Flushing data to temp files... Done
+Flushing data to temp files... Done
+Splitting '77.txt'... Done.
+Splitting '34.txt'... Done.
+Splitting '33.txt'... Done.
+Splitting '6e.txt'... Done.
+Flushing data to temp files... Done
+Flushing data to temp files... Done
+Flushing data to temp files... Done
+Flushing data to temp files... Done
+Splitting '69.txt'... Done.
+Splitting '66.txt'... Done.
+Splitting 'd0.txt'... Done.
+Splitting '76.txt'... Done.
+Flushing data to temp files... Done
+Flushing data to temp files... Done
+Flushing data to temp files... Done
+Flushing data to temp files... Done
+Splitting '4d.txt'... Done.
+Splitting '54.txt'... Done.
+Splitting '50.txt'... Done.
+Splitting '30.txt'... Done.
+Flushing data to temp files... Done
+Flushing data to temp files... Done
+Flushing data to temp files... Done
+Flushing data to temp files... Done
+Splitting '45.txt'... Done.
+Splitting 'e5.txt'... Done.
+Splitting '6f.txt'... Done.
+Splitting '52.txt'... Done.
+Flushing data to temp files... Done
+Flushing data to temp files... Done
+Flushing data to temp files... Done
+Flushing data to temp files... Done
+Splitting '4c.txt'... Done.
+Splitting '75.txt'... Done.
+Splitting '48.txt'... Done.
+Splitting '4b.txt'... Done.
+Flushing data to temp files... Done
+Flushing data to temp files... Done
+Flushing data to temp files... Done
+Splitting '47.txt'... Done.
+Flushing data to temp files... Done
+Splitting '79.txt'... Done.
+Splitting '7a.txt'... Done.
+Splitting 'ef.txt'... Done.
+Flushing data to temp files... Done
+Flushing data to temp files... Done
+Splitting 'e6.txt'... Done.
+Splitting '46.txt'... Done.
+Flushing data to temp files... Done
+Flushing data to temp files... Done
+Splitting '4e.txt'... Done.
+Splitting '49.txt'... Done.
+Flushing data to temp files... Done
+Splitting 'e7.txt'... Done.
+Flushing data to temp files... Done
+Flushing data to temp files... Done
+Flushing data to temp files... Done
+Flushing data to temp files... Done
+Splitting 13 file(s) (round 3)...
+Splitting 'e381.txt'... Done.
+Splitting '7265.txt'... Done.
+Splitting '6d61.txt'... Done.
+Splitting 'e380.txt'... Done.
+Flushing data to temp files... Done
+Splitting '6368.txt'... Done.
+Flushing data to temp files... Done
+Splitting '636f.txt'... Done.
+Flushing data to temp files... Done
+Splitting 'efbc.txt'... Done.
+Flushing data to temp files... Done
+Splitting '7468.txt'... Done.
+Flushing data to temp files... Done
+Flushing data to temp files... Done
+Splitting '7374.txt'... Done.
+Splitting '6465.txt'... Done.
+Flushing data to temp files... Done
+Splitting '7361.txt'... Done.
+Flushing data to temp files... Done
+Splitting '6361.txt'... Done.
+Flushing data to temp files... Done
+Flushing data to temp files... Done
+Splitting '726f.txt'... Done.
+Flushing data to temp files... Done
+Flushing data to temp files... Done
+Flushing data to temp files... Done
+Finished splitting files in 21.21 min.
+
+Sorting files.
+There are 212 chunk(s) to sort.
+Sorting chunk 4 (3120.txt - 3130.txt)... Sorted.  Written.
+Sorting chunk 2 (3032.txt - 3037.txt)... Sorted.  Written.
+Sorting chunk 1 (!.txt - 3031.txt)... Sorted.  Written.
+Sorting chunk 3 (3038.txt - 3119.txt)... Sorted.  Written.
+Sorting chunk 5 (3131.txt - 3132.txt)... Sorted.  Written.
+Sorting chunk 6 (3133.txt - 3135.txt)... Sorted.  Written.
+Sorting chunk 8 (3139.txt - 316c.txt)... Sorted.  Written.
+Sorting chunk 7 (3136.txt - 3138.txt)... Sorted.  Written.
+Sorting chunk 9 (316d.txt - 322f.txt)... Sorted.  Written.
+Sorting chunk 10 (3230.txt - 3231.txt)... Sorted.  Written.
+Sorting chunk 11 (3232.txt - 3234.txt)... Sorted.  Written.
+Sorting chunk 12 (3235.txt - 3237.txt)... Sorted.  Written.
+Sorting chunk 13 (3238.txt - 3273.txt)... Sorted.  Written.
+Sorting chunk 14 (3274.txt - 3332.txt)... Sorted.  Written.
+Sorting chunk 15 (3333.txt - 3337.txt)... Sorted.  Written.
+Sorting chunk 16 (3338.txt - 341e.txt)... Sorted.  Written.
+Sorting chunk 17 (3420.txt - 3436.txt)... Sorted.  Written.
+Sorting chunk 18 (3437.txt - 346d.txt)... Sorted.  Written.
+Sorting chunk 20 (3531.txt - 3537.txt)... Sorted.  Written.
+Sorting chunk 19 (346e.txt - 3530.txt)... Sorted.  Written.
+Sorting chunk 22 (3569.txt - 35ff.txt)... Sorted.  Written.
+Sorting chunk 21 (3538.txt - 3568.txt)... Sorted.  Written.
+Sorting chunk 24 (3637.txt - 3666.txt)... Sorted.  Written.
+Sorting chunk 23 (36!.txt - 3636.txt)... Sorted.  Written.
+Sorting chunk 26 (36e5.txt - 3736.txt)... Sorted.  Written.
+Sorting chunk 25 (3667.txt - 36e4.txt)... Sorted.  Written.
+Sorting chunk 28 (3767.txt - 3779.txt)... Sorted.  Written.
+Sorting chunk 27 (3737.txt - 3766.txt)... Sorted.  Written.
+Sorting chunk 29 (377a.txt - 3836.txt)... Sorted.  Written.
+Sorting chunk 30 (3837.txt - 3866.txt)... Sorted.  Written.
+Sorting chunk 32 (387a.txt - 3936.txt)... Sorted.  Written.
+Sorting chunk 31 (3867.txt - 3879.txt)... Sorted.  Written.
+Sorting chunk 33 (3937.txt - 3965.txt)... Sorted.  Written.
+Sorting chunk 34 (3966.txt - 3976.txt)... Sorted.  Written.
+Sorting chunk 35 (3977.txt - 4142.txt)... Sorted.  Written.
+Sorting chunk 36 (4143.txt - 4160.txt)... Sorted.  Written.
+Sorting chunk 38 (416c.txt - 4171.txt)... Sorted.  Written.
+Sorting chunk 37 (4161.txt - 416b.txt)... Sorted.  Written.
+Sorting chunk 39 (4172.txt - 422f.txt)... Sorted.  Written.
+Sorting chunk 40 (4230.txt - 4251.txt)... Sorted.  Written.
+Sorting chunk 42 (4265.txt - 426e.txt)... Sorted.  Written.
+Sorting chunk 41 (4252.txt - 4264.txt)... Sorted.  Written.
+Sorting chunk 43 (426f.txt - 4327.txt)... Sorted.  Written.
+Sorting chunk 44 (4328.txt - 434a.txt)... Sorted.  Written.
+Sorting chunk 45 (434b.txt - 4360.txt)... Sorted.  Written.
+Sorting chunk 46 (4361.txt - 4367.txt)... Sorted.  Written.
+Sorting chunk 47 (4368.txt - 436e.txt)... Sorted.  Written.
+Sorting chunk 48 (436f.txt - 4423.txt)... Sorted.  Written.
+Sorting chunk 49 (4424.txt - 4449.txt)... Sorted.  Written.
+Sorting chunk 50 (444a.txt - 4464.txt)... Sorted.  Written.
+Sorting chunk 51 (4465.txt - 446e.txt)... Sorted.  Written.
+Sorting chunk 52 (446f.txt - 4548.txt)... Sorted.  Written.
+Sorting chunk 53 (4549.txt - 456c.txt)... Sorted.  Written.
+Sorting chunk 54 (456d.txt - 4660.txt)... Sorted.  Written.
+Sorting chunk 55 (4661.txt - 4744.txt)... Sorted.  Written.
+Sorting chunk 56 (4745.txt - 4771.txt)... Sorted.  Written.
+Sorting chunk 57 (4772.txt - 4864.txt)... Sorted.  Written.
+Sorting chunk 58 (4865.txt - 4943.txt)... Sorted.  Written.
+Sorting chunk 59 (4944.txt - 4979.txt)... Sorted.  Written.
+Sorting chunk 60 (497a.txt - 4b43.txt)... Sorted.  Written.
+Sorting chunk 61 (4b44.txt - 4b6e.txt)... Sorted.  Written.
+Sorting chunk 62 (4b6f.txt - 4c60.txt)... Sorted.  Written.
+Sorting chunk 63 (4c61.txt - 4c6e.txt)... Sorted.  Written.
+Sorting chunk 64 (4c6f.txt - 4d60.txt)... Sorted.  Written.
+Sorting chunk 65 (4d61.txt - 4d68.txt)... Sorted.  Written.
+Sorting chunk 66 (4d69.txt - 4e44.txt)... Sorted.  Written.
+Sorting chunk 67 (4e45.txt - 4e76.txt)... Sorted.  Written.
+Sorting chunk 68 (4e77.txt - 5040.txt)... Sorted.  Written.
+Sorting chunk 69 (5041.txt - 5067.txt)... Sorted.  Written.
+Sorting chunk 70 (5068.txt - 50fd.txt)... Sorted.  Written.
+Sorting chunk 71 (51.txt - 5264.txt)... Sorted.  Written.
+Sorting chunk 72 (5265.txt - 5333.txt)... Sorted.  Written.
+Sorting chunk 73 (5334.txt - 5360.txt)... Sorted.  Written.
+Sorting chunk 74 (5361.txt - 5367.txt)... Sorted.  Written.
+Sorting chunk 75 (5368.txt - 536f.txt)... Sorted.  Written.
+Sorting chunk 76 (5370.txt - 5379.txt)... Sorted.  Written.
+Sorting chunk 77 (537a.txt - 5467.txt)... Sorted.  Written.
+Sorting chunk 78 (5468.txt - 5471.txt)... Sorted.  Written.
+Sorting chunk 79 (5472.txt - 55.txt)... Sorted.  Written.
+Sorting chunk 80 (56.txt - 56.txt)... Sorted.  Written.
+Sorting chunk 81 (57.txt - 57.txt)... Sorted.  Written.
+Sorting chunk 82 (58.txt - 6136.txt)... Sorted.  Written.
+Sorting chunk 83 (6137.txt - 6162.txt)... Sorted.  Written.
+Sorting chunk 84 (6163.txt - 6168.txt)... Sorted.  Written.
+Sorting chunk 85 (6169.txt - 616b.txt)... Sorted.  Written.
+Sorting chunk 86 (616c.txt - 616c.txt)... Sorted.  Written.
+Sorting chunk 87 (616d.txt - 616d.txt)... Sorted.  Written.
+Sorting chunk 88 (616e.txt - 616f.txt)... Sorted.  Written.
+Sorting chunk 89 (6170.txt - 6172.txt)... Sorted.  Written.
+Sorting chunk 90 (6173.txt - 6232.txt)... Sorted.  Written.
+Sorting chunk 91 (6233.txt - 6264.txt)... Sorted.  Written.
+Sorting chunk 92 (6265.txt - 6268.txt)... Sorted.  Written.
+Sorting chunk 93 (6269.txt - 626e.txt)... Sorted.  Written.
+Sorting chunk 94 (626f.txt - 6271.txt)... Sorted.  Written.
+Sorting chunk 95 (6272.txt - 6274.txt)... Sorted.  Written.
+Sorting chunk 96 (6275.txt - 63616b.txt)... Sorted.  Written.
+Sorting chunk 97 (63616c.txt - 6363.txt)... Sorted.  Written.
+Sorting chunk 98 (6364.txt - 636868.txt)... Sorted.  Written.
+Sorting chunk 99 (636869.txt - 636b.txt)... Sorted.  Written.
+Sorting chunk 100 (636c.txt - 636f6d.txt)... Sorted.  Written.
+Sorting chunk 101 (636f6e.txt - 6371.txt)... Sorted.  Written.
+Sorting chunk 103 (6461.txt - 6462.txt)... Sorted.  Written.
+Sorting chunk 102 (6372.txt - 6460.txt)... Sorted.  Written.
+Sorting chunk 104 (6463.txt - 646573.txt)... Sorted.  Written.
+Sorting chunk 105 (646574.txt - 646e.txt)... Sorted.  Written.
+Sorting chunk 106 (646f.txt - 6474.txt)... Sorted.  Written.
+Sorting chunk 107 (6475.txt - 6563.txt)... Sorted.  Written.
+Sorting chunk 108 (6564.txt - 656b.txt)... Sorted.  Written.
+Sorting chunk 109 (656c.txt - 656d.txt)... Sorted.  Written.
+Sorting chunk 110 (656e.txt - 6574.txt)... Sorted.  Written.
+Sorting chunk 111 (6575.txt - 6660.txt)... Sorted.  Written.
+Sorting chunk 112 (6661.txt - 6668.txt)... Sorted.  Written.
+Sorting chunk 114 (6672.txt - 6760.txt)... Sorted.  Written.
+Sorting chunk 113 (6669.txt - 6671.txt)... Sorted.  Written.
+Sorting chunk 115 (6761.txt - 6765.txt)... Sorted.  Written.
+Sorting chunk 116 (6766.txt - 6771.txt)... Sorted.  Written.
+Sorting chunk 117 (6772.txt - 6860.txt)... Sorted.  Written.
+Sorting chunk 118 (6861.txt - 6864.txt)... Sorted.  Written.
+Sorting chunk 119 (6865.txt - 686e.txt)... Sorted.  Written.
+Sorting chunk 120 (686f.txt - 6874.txt)... Sorted.  Written.
+Sorting chunk 121 (6875.txt - 6964.txt)... Sorted.  Written.
+Sorting chunk 122 (6965.txt - 696d.txt)... Sorted.  Written.
+Sorting chunk 124 (6973.txt - 6a60.txt)... Sorted.  Written.
+Sorting chunk 123 (696e.txt - 6972.txt)... Sorted.  Written.
+Sorting chunk 125 (6a61.txt - 6a64.txt)... Sorted.  Written.
+Sorting chunk 126 (6a65.txt - 6a6e.txt)... Sorted.  Written.
+Sorting chunk 127 (6a6f.txt - 6a74.txt)... Sorted.  Written.
+Sorting chunk 128 (6a75.txt - 6b60.txt)... Sorted.  Written.
+Sorting chunk 129 (6b61.txt - 6b64.txt)... Sorted.  Written.
+Sorting chunk 130 (6b65.txt - 6b6b.txt)... Sorted.  Written.
+Sorting chunk 131 (6b6c.txt - 6b76.txt)... Sorted.  Written.
+Sorting chunk 132 (6b77.txt - 6c60.txt)... Sorted.  Written.
+Sorting chunk 133 (6c61.txt - 6c64.txt)... Sorted.  Written.
+Sorting chunk 134 (6c65.txt - 6c68.txt)... Sorted.  Written.
+Sorting chunk 135 (6c69.txt - 6c6e.txt)... Sorted.  Written.
+Sorting chunk 136 (6c6f.txt - 6c77.txt)... Sorted.  Written.
+Sorting chunk 137 (6c78.txt - 6d616d.txt)... Sorted.  Written.
+Sorting chunk 138 (6d616e.txt - 6d6173.txt)... Sorted.  Written.
+Sorting chunk 139 (6d6174.txt - 6d64.txt)... Sorted.  Written.
+Sorting chunk 140 (6d65.txt - 6d68.txt)... Sorted.  Written.
+Sorting chunk 141 (6d69.txt - 6d6e.txt)... Sorted.  Written.
+Sorting chunk 142 (6d6f.txt - 6d74.txt)... Sorted.  Written.
+Sorting chunk 144 (6e61.txt - 6e64.txt)... Sorted.  Written.
+Sorting chunk 143 (6d75.txt - 6e60.txt)... Sorted.  Written.
+Sorting chunk 145 (6e65.txt - 6e68.txt)... Sorted.  Written.
+Sorting chunk 146 (6e69.txt - 6e6e.txt)... Sorted.  Written.
+Sorting chunk 147 (6e6f.txt - 6f61.txt)... Sorted.  Written.
+Sorting chunk 148 (6f62.txt - 6f71.txt)... Sorted.  Written.
+Sorting chunk 149 (6f72.txt - 7060.txt)... Sorted.  Written.
+Sorting chunk 150 (7061.txt - 7064.txt)... Sorted.  Written.
+Sorting chunk 151 (7065.txt - 7068.txt)... Sorted.  Written.
+Sorting chunk 152 (7069.txt - 706e.txt)... Sorted.  Written.
+Sorting chunk 153 (706f.txt - 7071.txt)... Sorted.  Written.
+Sorting chunk 154 (7072.txt - 7076.txt)... Sorted.  Written.
+Sorting chunk 155 (7077.txt - 7260.txt)... Sorted.  Written.
+Sorting chunk 156 (7261.txt - 726563.txt)... Sorted.  Written.
+Sorting chunk 157 (726564.txt - 726574.txt)... Sorted.  Written.
+Sorting chunk 158 (726575.txt - 726f61.txt)... Sorted.  Written.
+Sorting chunk 159 (726f62.txt - 726f79.txt)... Sorted.  Written.
+Sorting chunk 160 (726f7a.txt - 736162.txt)... Sorted.  Written.
+Sorting chunk 161 (736163.txt - 736176.txt)... Sorted.  Written.
+Sorting chunk 162 (736177.txt - 7364.txt)... Sorted.  Written.
+Sorting chunk 163 (7365.txt - 7367.txt)... Sorted.  Written.
+Sorting chunk 164 (7368.txt - 7368.txt)... Sorted.  Written.
+Sorting chunk 165 (7369.txt - 736c.txt)... Sorted.  Written.
+Sorting chunk 166 (736d.txt - 736f.txt)... Sorted.  Written.
+Sorting chunk 167 (7370.txt - 737460.txt)... Sorted.  Written.
+Sorting chunk 168 (737461.txt - 737471.txt)... Sorted.  Written.
+Sorting chunk 169 (737472.txt - 7374fd.txt)... Sorted.  Written.
+Sorting chunk 170 (7375.txt - 7378.txt)... Sorted.  Written.
+Sorting chunk 171 (7379.txt - 7460.txt)... Sorted.  Written.
+Sorting chunk 172 (7461.txt - 7464.txt)... Sorted.  Written.
+Sorting chunk 173 (7465.txt - 746864.txt)... Sorted.  Written.
+Sorting chunk 174 (746865.txt - 7468fc.txt)... Sorted.  Written.
+Sorting chunk 175 (7469.txt - 746e.txt)... Sorted.  Written.
+Sorting chunk 176 (746f.txt - 7471.txt)... Sorted.  Written.
+Sorting chunk 177 (7472.txt - 7474.txt)... Sorted.  Written.
+Sorting chunk 178 (7475.txt - 756b.txt)... Sorted.  Written.
+Sorting chunk 179 (756c.txt - 7572.txt)... Sorted.  Written.
+Sorting chunk 180 (7573.txt - 7664.txt)... Sorted.  Written.
+Sorting chunk 181 (7665.txt - 7668.txt)... Sorted.  Written.
+Sorting chunk 182 (7669.txt - 7671.txt)... Sorted.  Written.
+Sorting chunk 183 (7672.txt - 7761.txt)... Sorted.  Written.
+Sorting chunk 184 (7762.txt - 7768.txt)... Sorted.  Written.
+Sorting chunk 185 (7769.txt - 7776.txt)... Sorted.  Written.
+Sorting chunk 186 (7777.txt - 7934.txt)... Sorted.  Written.
+Sorting chunk 187 (7935.txt - 7973.txt)... Sorted.  Written.
+Sorting chunk 188 (7974.txt - 7a67.txt)... Sorted.  Written.
+Sorting chunk 189 (7a68.txt - b4.txt)... Sorted.  Written.
+Sorting chunk 190 (b5.txt - c4.txt)... Sorted.  Written.
+Sorting chunk 191 (c5.txt - d09a.txt)... Sorted.  Written.
+Sorting chunk 192 (d09b.txt - d0b3.txt)... Sorted.  Written.
+Sorting chunk 193 (d0b4.txt - d0ff.txt)... Sorted.  Written.
+Sorting chunk 194 (d1.txt - d7.txt)... Sorted.  Written.
+Sorting chunk 195 (d8.txt - df.txt)... Sorted.  Written.
+Sorting chunk 196 (e0.txt - e38080.txt)... Sorted.  Written.
+Sorting chunk 197 (e38081.txt - e3808e.txt)... Sorted.  Written.
+Sorting chunk 198 (e3808f.txt - e381a6.txt)... Sorted.  Written.
+Sorting chunk 199 (e381a7.txt - e381aa.txt)... Sorted.  Written.
+Sorting chunk 200 (e381ab.txt - e381ad.txt)... Sorted.  Written.
+Sorting chunk 201 (e381ae.txt - e381bf.txt)... Sorted.  Written.
+Sorting chunk 202 (e382.txt - e382.txt)... Sorted.  Written.
+Sorting chunk 203 (e383.txt - e3ff.txt)... Sorted.  Written.
+Sorting chunk 204 (e4.txt - e586.txt)... Sorted.  Written.
+Sorting chunk 205 (e587.txt - e5a4.txt)... Sorted.  Written.
+Sorting chunk 206 (e5a5.txt - e695.txt)... Sorted.  Written.
+Sorting chunk 207 (e696.txt - e786.txt)... Sorted.  Written.
+Sorting chunk 208 (e787.txt - e7bd.txt)... Sorted.  Written.
+Sorting chunk 209 (e7be.txt - e8.txt)... Sorted.  Written.
+Sorting chunk 210 (e9.txt - efbc87.txt)... Sorted.  Written.
+Sorting chunk 211 (efbc88.txt - efbc8b.txt)... Sorted.  Written.
+Sorting chunk 212 (efbc8c.txt - ff.txt)... Sorted.  Written.
+Finished sorting and removing duplicates in 8.21 min
+1,399,238,754 lines remain.
+590,884,435 duplicates removed.
+
+Total run time 29.51 min.
+
+B:\Wordlists\MassiveSort>
