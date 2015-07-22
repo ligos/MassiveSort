@@ -6,6 +6,7 @@ Lets your sort and merge really, really big text files.
 
 ## Getting Started ##
 
+* Make sure you have .NET 4.5.2 installed
 * [Download the latest release](https://bitbucket.org/ligos/massivesort/downloads)
 * Unzip to a folder of your choice
 * `MassiveSort.exe merge -o sortedFile.txt -i unsortedFile.txt`
