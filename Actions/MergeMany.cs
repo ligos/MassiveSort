@@ -1083,10 +1083,17 @@ namespace MurrayGrant.MassiveSort.Actions
             this.WriteStats("Finished writing, final flush took {0:N1}ms.", flushSw.Elapsed.TotalMilliseconds);
 
             var duplicatesRemoved = totalLinesRead - totalLinesWritten;
-            var message = String.Format("Finished sorting{0} in {1}\n{2:N0} lines remain.\n", _Conf.LeaveDuplicates ? "" : " and removing duplicates", allSw.Elapsed.ToSizedString(), totalLinesWritten);
+            var message = String.Format("Finished sorting{0} in {1}\n{2:N0} lines remain.", _Conf.LeaveDuplicates ? "" : " and removing duplicates", allSw.Elapsed.ToSizedString(), totalLinesWritten);
             if (!_Conf.LeaveDuplicates)
-                message += String.Format("{0:N0} duplicates removed.\n", duplicatesRemoved);
+                message += String.Format("\n{0:N0} duplicates removed.", duplicatesRemoved);
             _Progress.Report(new BasicProgress(message, true));
+            var outputSize = new FileInfo(_Conf.OutputFile).Length;
+            if (!_Conf.LeaveDuplicates)
+                _Progress.Report(new BasicProgress(String.Format("Processed {0} down to {1}.", toSort.Sum(x => x.Length).ToByteSizedString(), outputSize.ToByteSizedString()), true));
+            else
+                _Progress.Report(new BasicProgress(String.Format("Processed {0}.", toSort.Sum(x => x.Length).ToByteSizedString()), true));
+            _Progress.Report(new BasicProgress("\n", true));
+    
             this.WriteStats("Finished sorting in {0}. {1:N0} lines remain, {2:N0} duplicates removed.", allSw.Elapsed.ToSizedString(), totalLinesWritten, duplicatesRemoved);
             this.WriteStats("Sort task scheduling overhead {0:N1}ms. {1:P1} of total sort time.", schedulerOverheadTime.TotalMilliseconds, schedulerOverheadTime.TotalSeconds / allSw.Elapsed.TotalSeconds);
         }
