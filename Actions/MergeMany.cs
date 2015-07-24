@@ -23,6 +23,7 @@ using System.Threading.Tasks;
 using System.IO;
 using System.Diagnostics;
 using CommandLine;
+using MurrayGrant.MassiveSort.Readers;
 
 namespace MurrayGrant.MassiveSort.Actions
 {
@@ -375,13 +376,8 @@ namespace MurrayGrant.MassiveSort.Actions
 
     public class MergeMany : ICmdVerb, IDisposable
     {
-        const byte newlineByte = (byte)'\n';
-        private const byte newline1 = (byte)'\n';
-        private const byte newline2 = (byte)'\r';
         private readonly double oneMbAsDouble = Helpers.OneMbAsDouble;
         private static string emptyShardFilename = "!";
-        private static readonly byte[] _DollarHexPrefix = Encoding.ASCII.GetBytes("$HEX[");
-        private static readonly byte _DollarHexSuffix = Encoding.ASCII.GetBytes("]").First();
 
         private readonly MergeConf _Conf;
         private ParallelOptions _ParallelOptsForConfiguredDegreeOfIOParallelism;
@@ -630,7 +626,7 @@ namespace MurrayGrant.MassiveSort.Actions
 
                             // Find a newline character to end the chunk on.
                             var b = (byte)fs.ReadByte();
-                            while (!(b == newline1 || b == newline2) && fs.Position != 1)
+                            while (!(b == Constants.NewLineAsByte || b == Constants.NewLineAsByteAlt) && fs.Position != 1)
                             {
                                 fs.Seek(-2, SeekOrigin.Current);
                                 b = (byte)fs.ReadByte();
@@ -641,7 +637,7 @@ namespace MurrayGrant.MassiveSort.Actions
                             result.Add(new SplitChunk(f, chunkNum, startOffset, endOffset));
 
                             // Find a non-newline to start the next chunk on.
-                            while ((b == newline1 || b == newline2) && fs.Position != fs.Length)
+                            while ((b == Constants.NewLineAsByte || b == Constants.NewLineAsByteAlt) && fs.Position != fs.Length)
                             {
                                 b = (byte)fs.ReadByte();
                             }
@@ -753,19 +749,12 @@ namespace MurrayGrant.MassiveSort.Actions
         }
         private long SplitFile(ShardFile[] shardFiles, long[] lineCounts, SplitChunk ch, int shardSize, object taskKey, bool lockStreams)
         {
-            long linesRead = 0;
-            long buffersSkipped = 0;
-            long buffersRead = 0;
-            long extraSeeks = 0;
             long linesTrimmed = 0;
             long linesStripped = 0;
             long linesConvertedToDollarHex = 0;
-            int bytesInBuffer = 0;
-            var lineBuffer = new byte[_Conf.LineBufferSize];
             // For additional processing which requires a copy of data.
             // The allocation size allow us to convert a full line buffer to $HEX[...] format.
-            var extraBuffer = new byte[_Conf.LineBufferSize * 2 + _DollarHexPrefix.Length + 1];
-            bool emptyStringFound = false;
+            var extraBuffer = new byte[_Conf.LineBufferSize * 2 + Constants.DollarHexPrefix.Length + Constants.DollarHexSuffix.Length];
             bool trimWhitespace = (_Conf.Whitespace == MergeConf.WhitespaceOptions.Trim);
             bool stripWhitespace = (_Conf.Whitespace == MergeConf.WhitespaceOptions.Strip);
             bool convertToDollarHex = _Conf.ConvertToDollarHex;
@@ -773,105 +762,50 @@ namespace MurrayGrant.MassiveSort.Actions
             _Progress.Report(new TaskProgress(String.Format("Splitting '{0}'...", ch.NameForProgress), false, taskKey));
             var sw = Stopwatch.StartNew();
 
-            // Split the file into chunks.
-            using (var stream = new FileStream(ch.FullPath, FileMode.Open, FileAccess.Read, FileShare.Read, _Conf.ReadBufferSize))
+            var reader = new PlainRaw(_CancelToken, _Conf.LineBufferSize, _Conf.ReadBufferSize);
+            foreach (var line in reader.ReadAll(ch.FullPath, ch.StartOffset, ch.EndOffset))
             {
-                stream.Position = ch.StartOffset;
+                // Additional processing happens here.
 
-                // Read the file in buffer sized chunks.
-                // This is perf critical code.
-                // PERF: about 30% of CPU time is spent in this loop and inlined functions (not in the marked functions).
-                while ((bytesInBuffer = ReadLineBuffer(stream, lineBuffer, ch.EndOffset)) > 0)
+                // The order of these means only one will ever be triggered.
+                // The code, as it stands, will not cope with two copies of the line (the copies will overwrite each other on the 2nd call).
+                var toWrite = line;
+
+                // Convert to $HEX before trimming, as any removal of whitespace will break unicode (UTF-16) encoded strings.
+                if (convertToDollarHex)
                 {
-                    if (_CancelToken.IsCancellationRequested) break;
-                    buffersRead++;
-                    int idx = 0;
-                    OffsetAndLength ol;
-
-                    // Ensure an empty string is written if present in the buffer.
-                    if (!emptyStringFound && BufferContainsEmptyString(lineBuffer, bytesInBuffer))
-                    {
-                        linesRead++;
-                        if (lockStreams)
-                            ShardWordToFileWithStreamLock(new ByteArraySegment(), shardSize, shardFiles, lineCounts);
-                        else
-                            ShardWordToFileWithoutLock(new ByteArraySegment(), shardSize, shardFiles, lineCounts);
-                    }
-
-                    do
-                    {
-                        // Find the next word.
-                        // PERF: about 20% of CPU time is spent in NextWord().
-                        ol = NextWord(lineBuffer, idx);
-
-                        if (ol.Length >= 0 && ol.Offset >= 0)
-                        {
-                            // Additional processing happens here.
-                            var toWrite = new ByteArraySegment(lineBuffer, ol.Offset, ol.Length);
-
-                            // The order of these means only one will ever be triggered.
-                            // The code, as it stands, will not cope with two copies of the line (the copies will overwrite each other on the 2nd call).
-
-                            // Convert to $HEX before trimming, as any removal of whitespace will break unicode (UTF-16) encoded strings.
-                            if (convertToDollarHex)
-                            {
-                                var maybeChanged = this.ConvertToDollarHex(toWrite, extraBuffer);
-                                if (toWrite != maybeChanged) linesConvertedToDollarHex++;
-                                toWrite = maybeChanged;
-                            }
-                            // Trimming whitespace does not require a change to the buffer or any copying.
-                            if (trimWhitespace)
-                            {
-                                var maybeChanged = this.TrimWhitespace(toWrite, _Conf.WhitespaceChars);
-                                if (toWrite != maybeChanged) linesTrimmed++;
-                                toWrite = maybeChanged;
-                            }
-                            // Stripping all whitespace may require a copy to the alternate buffer.
-                            if (stripWhitespace)
-                            {
-                                var maybeChanged = this.StripWhitespace(toWrite, extraBuffer, _Conf.WhitespaceChars);
-                                if (toWrite != maybeChanged) linesStripped++;
-                                toWrite = maybeChanged;
-                            }
-
-
-                            // Write the word to the shard file.
-                            // PERF: about 45% of CPU time is spent in FileStream.Write(), contained in ShardWordToFile().
-                            linesRead++;
-                            if (lockStreams)
-                                ShardWordToFileWithStreamLock(toWrite, shardSize, shardFiles, lineCounts);
-                            else
-                                ShardWordToFileWithoutLock(toWrite, shardSize, shardFiles, lineCounts);
-                            idx += ol.Length + 1;       // Assume at least one new line after the word.
-                        }
-                        else
-                        {
-                            // Can't process this word because we hit the end of the buffer.
-
-                            if (idx == 0)
-                            {
-                                // Skip this line, because it did not fit entirely in the buffer.
-                                buffersSkipped++;
-                            }
-                            else if (ol.Offset == -1)
-                            {
-                                // Got to the end of the line without finding the start of a word: no additional seek is required (no-op).
-                            }
-                            else if (ol.Length == -1)
-                            {
-                                // The buffer splits the word: seek backwards in the file slightly so the next buffer is at the start of the word.
-                                stream.Position = stream.Position - (lineBuffer.Length - ol.Offset);
-                                extraSeeks++;
-                            }
-                        }
-                    } while (ol.Length >= 0 && ol.Offset >= 0);      // End of the buffer: read the next one.
+                    var maybeChanged = this.ConvertToDollarHex(toWrite, extraBuffer);
+                    if (toWrite != maybeChanged) linesConvertedToDollarHex++;
+                    toWrite = maybeChanged;
                 }
+                // Trimming whitespace does not require a change to the buffer or any copying.
+                if (trimWhitespace)
+                {
+                    var maybeChanged = this.TrimWhitespace(toWrite, _Conf.WhitespaceChars);
+                    if (toWrite != maybeChanged) linesTrimmed++;
+                    toWrite = maybeChanged;
+                }
+                // Stripping all whitespace may require a copy to the alternate buffer.
+                if (stripWhitespace)
+                {
+                    var maybeChanged = this.StripWhitespace(toWrite, extraBuffer, _Conf.WhitespaceChars);
+                    if (toWrite != maybeChanged) linesStripped++;
+                    toWrite = maybeChanged;
+                }
+
+
+                // Write the word to the shard file.
+                // PERF: about 45% of CPU time is spent in FileStream.Write(), contained in ShardWordToFile().
+                if (lockStreams)
+                    ShardWordToFileWithStreamLock(toWrite, shardSize, shardFiles, lineCounts);
+                else
+                    ShardWordToFileWithoutLock(toWrite, shardSize, shardFiles, lineCounts);
             }
             sw.Stop();
-
             _Progress.Report(new TaskProgress(" Done.", true, taskKey));
-            this.WriteStats("File '{0}': {1:N0} lines processed in {2:N1}ms, {3:N1} lines / sec, {4:N1} MB / sec.", ch.NameForProgress, linesRead, sw.Elapsed.TotalMilliseconds, linesRead / sw.Elapsed.TotalSeconds, (ch.Length / oneMbAsDouble) / sw.Elapsed.TotalSeconds);
-            this.WriteStats("File '{0}': {1:N0} line buffers read, {2:N0} line buffers skipped because lines were too long, {3:N0} additional seeks due to buffer alignment.", ch.NameForProgress, buffersRead, buffersSkipped, extraSeeks);
+
+            this.WriteStats("File '{0}': {1:N0} lines processed in {2:N1}ms, {3:N1} lines / sec, {4:N1} MB / sec.", ch.NameForProgress, reader.LinesRead, sw.Elapsed.TotalMilliseconds, reader.LinesRead / sw.Elapsed.TotalSeconds, (ch.Length / oneMbAsDouble) / sw.Elapsed.TotalSeconds);
+            this.WriteStats("File '{0}': {1:N0} line buffers read, {2:N0} line buffers skipped because lines were too long, {3:N0} additional seeks due to buffer alignment.", ch.NameForProgress, reader.BuffersRead, reader.BuffersSkipped, reader.ExtraSeeks);
             if (trimWhitespace)
                 this.WriteStats("File '{0}': {1:N0} lines had whitespace trimmed.", ch.NameForProgress, linesTrimmed);
             if (stripWhitespace)
@@ -879,7 +813,7 @@ namespace MurrayGrant.MassiveSort.Actions
             if (convertToDollarHex)
                 this.WriteStats("File '{0}': {1:N0} lines were converted to $HEX[].", ch.NameForProgress, linesConvertedToDollarHex);
 
-            return linesRead;
+            return reader.LinesRead;
         }
 
 
@@ -905,7 +839,7 @@ namespace MurrayGrant.MassiveSort.Actions
             var stream = shardFiles[shard].Stream;
             if (seg.Count > 0)
                 stream.Write(seg.Array, seg.Offset, seg.Count);
-            stream.WriteByte(newlineByte);
+            stream.WriteByte(Constants.NewLineAsByte);
             lineCounts[shard] = lineCounts[shard] + 1;
         }
 
@@ -934,91 +868,11 @@ namespace MurrayGrant.MassiveSort.Actions
             {
                 if (seg.Count > 0)
                     stream.Write(seg.Array, seg.Offset, seg.Count);
-                stream.WriteByte(newlineByte);
+                stream.WriteByte(Constants.NewLineAsByte);
                 lineCounts[shard] = lineCounts[shard] + 1;
             }
         }
 
-        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
-        private int ReadLineBuffer(FileStream stream, byte[] buf, long endOffset)
-        {
-            var maxToRead = buf.Length;
-            var fileRemaining = endOffset - stream.Position;
-            if (fileRemaining < maxToRead)
-                maxToRead = (int)fileRemaining;
-
-            int bytesRead = stream.Read(buf, 0, maxToRead);
-            if (bytesRead <= 0)
-                // End of file / chunk.
-                return 0;
-
-            if (bytesRead < buf.Length)
-            {
-                // Any left over space in the buffer is filled with new line characters.
-                // These will be skipped in NextWord().
-                for (int i = bytesRead; i < buf.Length; i++)
-                    buf[i] = newline1;
-            }
-            return bytesRead;
-        }
-
-
-        private OffsetAndLength NextWord(byte[] buf, int startIdx)
-        {
-            if (startIdx >= buf.Length)
-                // Past the end of the buffer.
-                return new OffsetAndLength(-1, -1);
-
-            // Ensure we aren't starting on a newline.
-            if (buf[startIdx] == newline1 || buf[startIdx] == newline2)
-                startIdx = NextNonNewlineInBuffer(buf, startIdx);
-
-            if (startIdx == -1)
-                // Got to end of buffer without finding the start of a word.
-                return new OffsetAndLength(-1, -1);
-
-            var endIdx = NextNewlineInBuffer(buf, startIdx);
-            if (endIdx == -1)
-                // Got to the end of the buffer without getting to the end of the word.
-                return new OffsetAndLength(startIdx, -1);
-
-            // Found the start and end of a word.
-            return new OffsetAndLength(startIdx, endIdx - startIdx);
-        }
-
-        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
-        private int NextNonNewlineInBuffer(byte[] buf, int startIdx)
-        {
-            for (int i = startIdx; i < buf.Length; i++)
-            {
-                if (buf[i] != newline1 && buf[i] != newline2)
-                    return i;
-            }
-            return -1;
-        }
-        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
-        private int NextNewlineInBuffer(byte[] buf, int startIdx)
-        {
-            // PERF: might be worth trying pinvoke to memchr() 
-            for (int i = startIdx; i < buf.Length; i++)
-            {
-                if (buf[i] == newline1 || buf[i] == newline2)
-                    return i;
-            }
-            return -1;
-        }
-
-        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
-        private bool BufferContainsEmptyString(byte[] buf, int len)
-        {
-            for (int i = 1; i < len; i++)
-            {
-                if ((buf[i - 1] == newline1 || buf[i - 1] == newline2)
-                    && (buf[i] == newline1 || buf[i] == newline2))
-                    return true;
-            }
-            return false;
-        }
 
         private ByteArraySegment TrimWhitespace(ByteArraySegment seg, byte[] whitespaceChars)
         {
@@ -1102,14 +956,14 @@ namespace MurrayGrant.MassiveSort.Actions
             // Make a copy into the other buffer, converting to hex.
             int oBufIdx = 0;
             // $HEX[ prefix.
-            for (int i = 0; i < _DollarHexPrefix.Length; oBufIdx++, i++)
-                otherBuf[oBufIdx] = _DollarHexPrefix[i];
+            for (int i = 0; i < Constants.DollarHexPrefix.Length; oBufIdx++, i++)
+                otherBuf[oBufIdx] = Constants.DollarHexPrefix[i];
             // Actual data.
             for (int i = seg.Offset; i < seg.Offset + seg.Count; oBufIdx += 2, i++)
                 Helpers.WriteHexToArray(otherBuf, oBufIdx, seg.Array[i]);
             // ] suffix.
-            otherBuf[oBufIdx] = _DollarHexSuffix;
-            oBufIdx++;
+            for (int i = 0; i < Constants.DollarHexSuffix.Length; oBufIdx++, i++)
+                otherBuf[oBufIdx] = Constants.DollarHexSuffix[i];
 
             return new ByteArraySegment(otherBuf, 0, oBufIdx);
         }
@@ -1421,7 +1275,7 @@ namespace MurrayGrant.MassiveSort.Actions
             int end = 0;
             for (int i = 0; i < data.Length; i++)
             {
-                if (data[i] == newlineByte)
+                if (data[i] == Constants.NewLine)
                 {
                     offsets[offset] = new OffsetAndLength(start, end - start);
                     offset++;
@@ -1511,7 +1365,7 @@ namespace MurrayGrant.MassiveSort.Actions
             {
                 var current = offsets[i];
                 output.Write(chunkData, current.Offset, current.Length);
-                output.WriteByte(newlineByte);
+                output.WriteByte(Constants.NewLineAsByte);
                 linesWritten++;
             }
 
@@ -1524,7 +1378,7 @@ namespace MurrayGrant.MassiveSort.Actions
                 {
                     var current = offsets[i];
                     duplicateOutput.Write(chunkData, current.Offset, current.Length);
-                    duplicateOutput.WriteByte(newlineByte);
+                    duplicateOutput.WriteByte(Constants.NewLineAsByte);
                 }
 
             }
