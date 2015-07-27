@@ -47,9 +47,20 @@ namespace MurrayGrant.MassiveSort
             }
         }
 
+        // https://superuser.com/questions/332610/where-is-the-temporary-directory-in-linux
+        // https://technet.microsoft.com/en-us/library/cc749104(v=ws.10).aspx
+        private static readonly string[] _TempEnvironmentVars = new[] { "TEMP", "TMP", "TMPDIR" };
         public static string GetBaseTempFolder()
         {
-            return Path.Combine(Environment.GetEnvironmentVariable("TEMP"), "MassiveSort");
+            foreach (var env in _TempEnvironmentVars)
+            {
+                var maybePath = Environment.GetEnvironmentVariable(env);
+                if (!String.IsNullOrEmpty(maybePath))
+                    return Path.Combine(maybePath, "MassiveSort");
+            }
+            if (Environment.OSVersion.Platform == PlatformID.Unix)
+                return Path.Combine("/tmp", "MassiveSort");
+            throw new Exception("Cannot find temporary folder. Tried environment variables: " + String.Join(",", _TempEnvironmentVars));
         }
 
         public static IEnumerable<byte[]> YieldLinesAsByteArray(this FileInfo fi, int streamBufferSize, int lineBufferSize)
@@ -235,17 +246,60 @@ namespace MurrayGrant.MassiveSort
         public static int PhysicalCoreCount()
         {
             if (Environment.OSVersion.Platform == PlatformID.Win32NT)
-            {
-                // http://stackoverflow.com/a/2670568
-                int coreCount = 0;
-                foreach (var item in new System.Management.ManagementObjectSearcher("Select NumberOfCores from Win32_Processor").Get())
-                {
-                    coreCount += int.Parse(item["NumberOfCores"].ToString());
-                }
-                return coreCount;
-            }
+                return PhysicalCoreCount_Win32();
+            else if (Environment.OSVersion.Platform == PlatformID.Unix)
+                return PhysicalCoreCount_Unix();
             else
                 throw new NotImplementedException("PhysicalCoreCount() is not supported on " + Environment.OSVersion.Platform);
+        }
+        private static int PhysicalCoreCount_Win32()
+        {
+            // http://stackoverflow.com/a/2670568
+            int coreCount = 0;
+            foreach (var item in new System.Management.ManagementObjectSearcher("Select NumberOfCores from Win32_Processor").Get())
+            {
+                coreCount += int.Parse(item["NumberOfCores"].ToString());
+            }
+            return coreCount;
+        }
+        private static int PhysicalCoreCount_Unix()
+        {
+            // https://stackoverflow.com/questions/6481005/how-to-obtain-the-number-of-cpus-cores-in-linux-from-the-command-line
+            // https://unix.stackexchange.com/questions/33450/checking-if-hyperthreading-is-enabled-or-not
+            var lines = File.ReadAllLines("/proc/cpuinfo", Encoding.UTF8).Where(l => !String.IsNullOrEmpty(l));
+            var cpuCount = lines.Count(l => l.Contains("processor", StringComparison.OrdinalIgnoreCase));
+            var hyperthreadingEnabled = lines.Any(l => l.Contains("flags") && l.Contains("ht"));
+            if (hyperthreadingEnabled)
+                return cpuCount / 2;
+            else
+                return cpuCount;
+        }
+
+
+        public static bool TryShellExecute(string command, out string result)
+        {
+            return TryShellExecute(command, "", out result);
+        }
+        public static bool TryShellExecute(string command, string args, out string result)
+        {
+            // https://stackoverflow.com/questions/4291912/process-start-how-to-get-the-output
+            var si = new System.Diagnostics.ProcessStartInfo();
+            si.FileName = command;
+            si.Arguments = args;
+            si.UseShellExecute = false;
+            si.RedirectStandardInput = true;
+            si.CreateNoWindow = true;
+            using (var proc = new System.Diagnostics.Process())
+            {
+                proc.StartInfo = si;
+                proc.Start();
+                proc.WaitForExit(10000);        // 10 second timeout.
+                if (proc.ExitCode == 0)
+                    result = proc.StandardOutput.ReadToEnd();
+                else
+                    result = null;
+                return (proc.ExitCode == 0);
+            }
         }
 
         public static string ToByteSizedString(this int number, int decimals = 2)
