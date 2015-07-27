@@ -122,6 +122,63 @@ namespace MurrayGrant.MassiveSort.Readers
         }
 
 
+        public IList<FileChunk> ConvertFilesToSplitChunks(IEnumerable<FileInfo> files, long thresholdSize, long chunkSize)
+        {
+            // Sort be size, descending, to process larger chunks first.
+            // To try to keep more cores busy for longer and not end up with a single large chunk dominating split time.
+            var largestToSmallestFiles = files.OrderByDescending(x => x.Length);
+
+            var result = new List<FileChunk>(files.Count());
+            foreach (var f in largestToSmallestFiles)
+            {
+                if (f.Length < thresholdSize)
+                    // Trivial case: the whole file is a chunk.
+                    result.Add(new FileChunk(f, 0, 0L, f.Length));
+                else
+                {
+                    // Large file: need to split into chunks on line boundaries.
+                    using (var fs = new FileStream(f.FullName, FileMode.Open, FileAccess.Read, FileShare.None))
+                    {
+                        int chunkNum = 1;
+                        do
+                        {
+                            long startOffset = fs.Position;
+                            if (fs.Position + chunkSize >= fs.Length)
+                            {
+                                // Last chunk.
+                                result.Add(new FileChunk(f, chunkNum, startOffset, fs.Length));
+                                break;
+                            }
+                            fs.Seek(chunkSize, SeekOrigin.Current);
+
+                            // Find a newline character to end the chunk on.
+                            var b = (byte)fs.ReadByte();
+                            while (!(b == Constants.NewLineAsByte || b == Constants.NewLineAsByteAlt) && fs.Position != 1)
+                            {
+                                fs.Seek(-2, SeekOrigin.Current);
+                                b = (byte)fs.ReadByte();
+                            }
+                            long endOffset = fs.Position;
+
+                            // Record the chunk.
+                            result.Add(new FileChunk(f, chunkNum, startOffset, endOffset));
+
+                            // Find a non-newline to start the next chunk on.
+                            while ((b == Constants.NewLineAsByte || b == Constants.NewLineAsByteAlt) && fs.Position != fs.Length)
+                            {
+                                b = (byte)fs.ReadByte();
+                            }
+                            fs.Seek(-1, SeekOrigin.Current);
+                            chunkNum++;
+                        } while (true);
+                    }
+                }
+            }
+
+            return result;
+        }
+
+
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         private bool BufferContainsEmptyString(byte[] buf, int len)
         {

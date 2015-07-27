@@ -60,6 +60,10 @@ namespace MurrayGrant.MassiveSort
                 action = new MergeMany(conf.MergeOptions.ExtraParsing());
             else if (!parseSucceeded && verb == "merge")
                 usageText = MergeConf.GetUsageText();
+            else if (parseSucceeded && (verb == "analyse" || verb == "analyze"))
+                action = new Analyse(conf.AnalyseOptions.ExtraParsing());
+            else if (!parseSucceeded && (verb == "analyse" || verb == "analyze"))
+                usageText = AnalyseConf.GetUsageText();
             else if (parseSucceeded && verb == "cleantemp")
                 action = new CleanTemp(conf.CleanTempOptions);
             else if (!parseSucceeded && verb == "cleantemp")

@@ -41,6 +41,11 @@ namespace MurrayGrant.MassiveSort
 
         [VerbOption("merge")]
         public MurrayGrant.MassiveSort.Actions.MergeConf MergeOptions { get; set; }
+        [VerbOption("analyse")]
+        public MurrayGrant.MassiveSort.Actions.AnalyseConf AnalyseOptions_Uk { get; set; }
+        [VerbOption("analyze")]
+        public MurrayGrant.MassiveSort.Actions.AnalyseConf AnalyseOptions_Us { get; set; }
+        public MurrayGrant.MassiveSort.Actions.AnalyseConf AnalyseOptions { get { return this.AnalyseOptions_Uk ?? this.AnalyseOptions_Us; } }
         [VerbOption("cleantemp")]
         public MurrayGrant.MassiveSort.Actions.CleanTempConf CleanTempOptions { get; set; }
         [VerbOption("about")]

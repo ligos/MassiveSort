@@ -22,6 +22,8 @@ using System.Threading.Tasks;
 using System.IO;
 using System.Diagnostics;
 using CommandLine;
+using MurrayGrant.MassiveSort.Readers;
+
 
 namespace MurrayGrant.MassiveSort.Actions
 {
@@ -45,6 +47,35 @@ namespace MurrayGrant.MassiveSort.Actions
 
         [Option('t', "temp-folder")]
         public string TempFolder { get; set; }
+
+        [Option('w', "workers")]
+        public int Workers { get; set; }
+
+        /// <summary>
+        /// Files larger than this (bytes) will be processed in smaller chunks.
+        /// To allow large files to gain benefits of parallelism too.
+        /// Default: 128MB
+        /// </summary>
+        public long LargeFileThresholdSize { get; set; }
+        [Option("large-threshold")]
+        public string LargeFileThresholdSize_Raw { get; set; }
+        /// <summary>
+        /// Large files are processed in chunks this big.
+        /// To allow large files to gain benefits of parallelism too.
+        /// Default: 32MB
+        /// </summary>
+        public long LargeFileChunkSize { get; set; }
+        [Option("large-chunk")]
+        public string LargeFileChunkSize_Raw { get; set; }
+
+
+
+        [Option("line-buffer-size")]
+        public string LineBufferSize_Raw { get; set; }
+        public int LineBufferSize { get; set; }
+        [Option("read-file-buffer-size")]
+        public string ReadBufferSize_Raw { get; set; }
+        public int ReadBufferSize { get; set; }
 
 
         public AnalyseConf ExtraParsing()
@@ -96,6 +127,69 @@ namespace MurrayGrant.MassiveSort.Actions
 
             PrintConf();        // Print the config settings, in debug mode.
 
+            var filesToProcess = this.GatherFiles();
+            if (token.IsCancellationRequested) return;
+
+            var aggregateSummaries = this.AnalyseFiles(filesToProcess);
+            if (token.IsCancellationRequested) return;
+
+            this.WriteResults(aggregateSummaries);
+        }
+
+
+        private IEnumerable<FileInfo> GatherFiles()
+        {
+            _Progress.Report(new BasicProgress(String.Format("Gathering files to analyse from '{0}'.", String.Join("; ", _Conf.Inputs)), true));
+
+            var sw = Stopwatch.StartNew();
+            var result = Helpers.GatherFiles(_Conf.Inputs);
+            sw.Stop();
+
+            return result;
+        }
+
+        private IEnumerable<RawByteAccumulator> AnalyseFiles(IEnumerable<FileInfo> files)
+        {
+            _Progress.Report(new BasicProgress(String.Format("Analysing {0:N0} file(s) totaling {1}.", files.Count(), files.Sum(x => x.Length).ToByteSizedString()), true));
+
+            var chunks = new PlainRaw(_CancelToken).ConvertFilesToSplitChunks(files, _Conf.LargeFileThresholdSize, _Conf.LargeFileChunkSize);
+            // TODO: parallel.
+
+            // TODO: pull this into a loop so that once a file is fully processed it can be written.
+            var fileSummaries = chunks
+                .Select(ch => this.AnalyseFile(ch))
+                .GroupBy(x => x.FullPath)
+                .Select(g => g.Aggregate(new RawByteAccumulator(g.Key), (x, acc) => acc.Add(x)))
+                .ToList();
+
+            return fileSummaries;
+        }
+
+        private RawByteAccumulator AnalyseFile(FileChunk ch)
+        {
+            var acc = new RawByteAccumulator(ch.FullPath);
+            var taskKey = new object();
+
+            if (_CancelToken.IsCancellationRequested) return acc;
+            _Progress.Report(new TaskProgress(String.Format("Analysing '{0}'...", ch.NameForProgress), false, taskKey));
+            var sw = Stopwatch.StartNew();
+
+            var reader = new PlainRaw(_CancelToken, _Conf.LineBufferSize, _Conf.ReadBufferSize);
+            foreach (var line in reader.ReadAll(ch.FullPath, ch.StartOffset, ch.EndOffset))
+            {
+                acc.AddOneByLength(line.Count);
+                if (_CancelToken.IsCancellationRequested) break;
+            }
+            acc.TotalLines = (ulong)reader.LinesRead;
+            sw.Stop();
+
+            _Progress.Report(new TaskProgress(" Done.", true, taskKey));
+            return acc;
+        }
+
+        private void WriteResults(IEnumerable<RawByteAccumulator> accs)
+        {
+            if (_CancelToken.IsCancellationRequested) return;
         }
 
         private void PrintConf()
@@ -110,9 +204,22 @@ namespace MurrayGrant.MassiveSort.Actions
             // Accumulate stats per-file.
             public readonly string FullPath;
 
+            public RawByteAccumulator(string fullPath)
+            {
+                this.FullPath = fullPath;
+                this.LineCountByLength = new UInt64[64];
+            }
+
             public bool IsSorted;           // True if the file is sorted.
             public UInt64 TotalLines;
-            public UInt64[] LineCountByLength;      // Initialise to 64 and grow as long lines are encountered. Up to 256. Beyond that, use a sparse array / dictionary.
+            public UInt64[] LineCountByLength;      // Initialise to 64 and grow as long lines are encountered.
+            public void AddOneByLength(int length)
+            {
+                if (length > this.LineCountByLength.Length)
+                    Array.Resize(ref this.LineCountByLength, length.ThisOrNextPowerOfTwo());
+                this.LineCountByLength[length] = this.LineCountByLength[length] + 1;
+            }
+
             public List<UInt64> CountsByAllCategoryMask;        // CharCategory, added together, is the index.
             public List<UInt64> CountsByAnyCategoryMask;        // The nth bit of the CharCategory is the index.
 
@@ -133,6 +240,17 @@ namespace MurrayGrant.MassiveSort.Actions
 
             public RawByteAccumulator Add(RawByteAccumulator other)
             {
+                if (this.FullPath != other.FullPath)
+                    throw new Exception("Cannot add accumulators for different files.");
+
+                this.TotalLines = this.TotalLines + other.TotalLines;
+
+                var longestLineCountLength = Math.Max(this.LineCountByLength.Length, other.LineCountByLength.Length);
+                if (this.LineCountByLength.Length < longestLineCountLength)
+                    Array.Resize(ref this.LineCountByLength, longestLineCountLength);
+                for (int i = 0; i < this.LineCountByLength.Length; i++)
+                    this.LineCountByLength[i] = this.LineCountByLength[i] + other.LineCountByLength[i];
+                
                 return this;
             }
         }

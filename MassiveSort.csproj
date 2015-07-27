@@ -47,7 +47,8 @@
     <Compile Include="Actions\About.cs" />
     <Compile Include="Actions\Analyse.cs" />
     <Compile Include="ByteArraySegment.cs" />
-    <Compile Include="Comparers\ClrOffsetComparer.cs" />
+    <Compile Include="Comparers\ClrOffsetDictionaryComparer.cs" />
+    <Compile Include="Comparers\ClrOffsetLengthComparer.cs" />
     <Compile Include="Comparers\ClrByteArrayComparer.cs" />
     <Compile Include="Comparers\PInvokeByteArrayComparer.cs" />
     <Compile Include="Conf.cs" />
@@ -66,6 +67,7 @@
     <Compile Include="Sorters\TimSort\TimSort.cs" />
     <Compile Include="Sorters\TimSort\TimSortBase.cs" />
     <Compile Include="Sorters\TimSort\TimSortExtender.cs" />
+    <Compile Include="FileChunk.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="App.config" />

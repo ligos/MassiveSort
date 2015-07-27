@@ -21,11 +21,14 @@ using System.Threading.Tasks;
 
 namespace MurrayGrant.MassiveSort.Comparers
 {
-    public class ClrOffsetComparer : IComparer<OffsetAndLength>, IEqualityComparer<OffsetAndLength>
+    /// <summary>
+    /// Compares length then dictionary order.
+    /// </summary>
+    public class ClrOffsetLengthComparer : IComparer<OffsetAndLength>, IEqualityComparer<OffsetAndLength>
     {
         private readonly byte[] _Data;
 
-        public ClrOffsetComparer(byte[] data)
+        public ClrOffsetLengthComparer(byte[] data)
         {
             this._Data = data;
         }
@@ -54,38 +57,20 @@ namespace MurrayGrant.MassiveSort.Comparers
         public int Compare(OffsetAndLength first, OffsetAndLength second)
         {
             // PERF: this is the hot method when sorting.
-
-            if (first.Length == second.Length)
-                // Same length: just return the comparison result.
-                return this.CompareToLength(first, second, first.Length);
-            else
+            
+            var cmp = first.Length.CompareTo(second.Length);
+            if (cmp != 0)
+                // Different length: just return the difference between lengths.
+                return cmp;
+            // Same length compares actual bytes.
+            for (int i = 0; i < first.Length; i++)
             {
-                // Different length is more of a pain.
-                // Make sure we only compare common length parts.
-                var shortestLen = Math.Min(first.Length, second.Length);
-                var cmp = this.CompareToLength(first, second, shortestLen);
-                if (cmp != 0)
-                    // The common length differs: just return comparison result;
-                    return cmp;
-                else
-                    // Common length is identical: longer comes after shorter.
-                    // Note the subtraction can break if our difference is Int32.MaxValue or Int32.MinValue - I'm assuming that's not the case.
-                    return first.Length - second.Length;
-            }
-        }
-
-        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
-        private int CompareToLength(OffsetAndLength first, OffsetAndLength second, int len)
-        {
-            // PERF: tried to unroll this, but it didn't improve performance.
-            for (int i = 0; i < len; i++)
-            {
-                var compareResult = this._Data[first.Offset + i].CompareTo(this._Data[second.Offset + i]);
+                cmp = this._Data[first.Offset + i].CompareTo(this._Data[second.Offset + i]);
                 // Finish early if we find a difference.
-                if (compareResult != 0)
-                    return compareResult;
+                if (cmp != 0)
+                    return cmp;
             }
-            // Arrays are equal (at least to the length specified).
+            // Arrays are equal.
             return 0;
         }
     }

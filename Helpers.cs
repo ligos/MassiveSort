@@ -409,5 +409,30 @@ namespace MurrayGrant.MassiveSort
 
             return true;
         }
+
+        public static ICollection<FileInfo> GatherFiles(IEnumerable<string> paths)
+        {
+            var result = paths.SelectMany(i =>
+                                Directory.Exists(i) ? new DirectoryInfo(i).EnumerateFiles("*", SearchOption.AllDirectories)
+                                   : File.Exists(i) ? new FileInfo[] { new FileInfo(i) }
+                                   : new FileInfo[] { }
+                        )
+                        .ToList();
+            return result;
+        }
+
+        public static int ThisOrNextPowerOfTwo(this int n)
+        {
+            // http://stackoverflow.com/a/12506181
+            int power = 1;
+            while (power < n)
+                power *= 2;
+            return power;
+        }
+
+        public static bool Contains(this string s, string toFind, StringComparison comparison)
+        {
+            return s.IndexOf(toFind, 0, comparison) != -1;
+        }
     }
 }

@@ -55,7 +55,7 @@ namespace MurrayGrant.MassiveSort.Actions
             this.LargeFileChunkSize = 256 * 1024 * 1024;    // 256MB
 
             this.SortAlgorithm = SortAlgorithms.TimSort;    // Sort algorithm to use. 
-            this.Comparer = Comparers.Clr;                  // IComparer implementation to use.
+            this.SortOrder = SortOrders.Dictionary;         // IComparer implementation to use - default to natural dictionary order.
 
             this.Whitespace = WhitespaceOptions.NoChange;   // Make no changes to whitespace.
             this.WhitespaceChars = new byte[] { 0x20, 0x09, 0x0b };     // Whitespace characters.
@@ -91,6 +91,9 @@ namespace MurrayGrant.MassiveSort.Actions
 
 
     Sorting
+-s --sort-by       Order to sort lines in
+                   - Dictionary: natural dictionary order (default)
+                   - Length: length first, then dictionary order
 --max-sort-size    Largest chunk of files to sort as a group
                    Default: 64MB, major contributor to memory usage
 --sort-algorithm   Sort agorithm to use, options:
@@ -208,6 +211,20 @@ namespace MurrayGrant.MassiveSort.Actions
         [Option("max-outstanding-sorted-chunks")]
         public int MaxOutstandingSortedChunks { get; set; }
 
+        [Option('s', "sort-by")]
+        public SortOrders SortOrder { get; set; }
+        public enum SortOrders
+        {
+            /// <summary>
+            /// Natural dictionary order. Eg: a, aa, ab, abc, b, bb
+            /// </summary>
+            Dictionary,
+            /// <summary>
+            /// Length, then dictionary order. Eg: a, b, aa, ab, bb, abc
+            /// </summary>
+            Length,
+        }
+
         [Option("sort-algorithm")]
         public SortAlgorithms SortAlgorithm { get; set; }
         public enum SortAlgorithms
@@ -234,21 +251,6 @@ namespace MurrayGrant.MassiveSort.Actions
             TimSort,
         }
 
-        [Option("comparer")]
-        public Comparers Comparer { get; set; }
-        public enum Comparers
-        {
-            /// <summary>
-            /// A comparer in pure c#.
-            /// </summary>
-            Clr,
-
-            /// <summary>
-            /// A more optimised comparer which uses native P/Invoke to memcmp()
-            /// </summary>
-            Native,
-
-        }
 
         [Option("whitespace")]
         public WhitespaceOptions Whitespace { get; set; }
@@ -467,11 +469,7 @@ namespace MurrayGrant.MassiveSort.Actions
                 _Progress.Report(new BasicProgress(String.Format("Gathering files to merge from '{0}'.", String.Join("; ", _Conf.Inputs)), true));
 
             var sw = Stopwatch.StartNew();
-            var result = _Conf.Inputs.SelectMany(i =>
-                    Directory.Exists(i) ? new DirectoryInfo(i).EnumerateFiles("*", SearchOption.AllDirectories)
-                                        : new FileInfo[] { new FileInfo(i) }
-                )
-                .ToList();
+            var result = Helpers.GatherFiles(_Conf.Inputs);
             sw.Stop();
 
             this.WriteStats("Found {0:N0} files to merge, totaling {1:N1}MB. Time to search: {2:N1}ms.", result.Count, result.Sum(x => x.Length) / oneMbAsDouble, sw.Elapsed.TotalMilliseconds);
@@ -524,7 +522,7 @@ namespace MurrayGrant.MassiveSort.Actions
         }
         private IDictionary<string, FileResult> DoTopLevelSplit(IEnumerable<FileInfo> files)
         {
-            var chunks = this.ConvertFilesToSplitChunks(files);
+            var chunks = new PlainRaw(_CancelToken).ConvertFilesToSplitChunks(files, _Conf.LargeFileThresholdSize, _Conf.LargeFileChunkSize);
             var shardFiles = CreateShardFiles("");
             var lineCounts = new long[shardFiles.Length];
             var result = new Dictionary<string, FileResult>(shardFiles.Length);
@@ -579,7 +577,7 @@ namespace MurrayGrant.MassiveSort.Actions
                     // Here's the actual split.
                     try
                     {
-                        var ch = new SplitChunk(f, 0, 0, f.Length);
+                        var ch = new FileChunk(f, 0, 0, f.Length);
                         SplitFile(shardFiles, lineCounts, ch, shardSize, taskKey, false);
                         for (int i = 0; i < shardFiles.Length; i++)
                             result.Add(shardFiles[i].Name, new FileResult(shardFiles[i].FullPath, shardFiles[i].Stream.Length, lineCounts[i]));
@@ -595,61 +593,6 @@ namespace MurrayGrant.MassiveSort.Actions
                 });
         }
 
-        private IList<SplitChunk> ConvertFilesToSplitChunks(IEnumerable<FileInfo> files)
-        {
-            // Sort be size, descending, to process larger chunks first.
-            // To try to keep more cores busy for longer and not end up with a single large chunk dominating split time.
-            var largestToSmallestFiles = files.OrderByDescending(x => x.Length);
-
-            var result = new List<SplitChunk>(files.Count());
-            foreach (var f in largestToSmallestFiles)
-            {
-                if (f.Length < _Conf.LargeFileThresholdSize)
-                    // Trivial case: the whole file is a chunk.
-                    result.Add(new SplitChunk(f, 0, 0L, f.Length));
-                else
-                {
-                    // Large file: need to split into chunks on line boundaries.
-                    using (var fs = new FileStream(f.FullName, FileMode.Open, FileAccess.Read, FileShare.None))
-                    {
-                        int chunkNum = 1;
-                        do
-                        {
-                            long startOffset = fs.Position;
-                            if (fs.Position + _Conf.LargeFileChunkSize >= fs.Length)
-                            {
-                                // Last chunk.
-                                result.Add(new SplitChunk(f, chunkNum, startOffset, fs.Length));
-                                break;
-                            }
-                            fs.Seek(_Conf.LargeFileChunkSize, SeekOrigin.Current);
-
-                            // Find a newline character to end the chunk on.
-                            var b = (byte)fs.ReadByte();
-                            while (!(b == Constants.NewLineAsByte || b == Constants.NewLineAsByteAlt) && fs.Position != 1)
-                            {
-                                fs.Seek(-2, SeekOrigin.Current);
-                                b = (byte)fs.ReadByte();
-                            }
-                            long endOffset = fs.Position;
-
-                            // Record the chunk.
-                            result.Add(new SplitChunk(f, chunkNum, startOffset, endOffset));
-
-                            // Find a non-newline to start the next chunk on.
-                            while ((b == Constants.NewLineAsByte || b == Constants.NewLineAsByteAlt) && fs.Position != fs.Length)
-                            {
-                                b = (byte)fs.ReadByte();
-                            }
-                            fs.Seek(-1, SeekOrigin.Current);
-                            chunkNum++;
-                        } while (true);
-                    }
-                }
-            }
-
-            return result;
-        }
 
         private void FlushFiles(ShardFile[] shardFiles, string moveLastShardToPath, long lastShardLineCount, IDictionary<string, FileResult> result, object taskKey)
         {
@@ -729,25 +672,7 @@ namespace MurrayGrant.MassiveSort.Actions
             return result;
         }
 
-        private class SplitChunk
-        {
-            public SplitChunk(FileInfo fi, int chunkNumber, long startOffset, long endOffset)
-            {
-                this.FullPath = fi.FullName;
-                this.Name = fi.Name;
-                this.ChunkNumberInFile = chunkNumber;
-                this.StartOffset = startOffset;
-                this.EndOffset = endOffset;
-            }
-            public readonly string FullPath;
-            public readonly string Name;
-            public readonly int ChunkNumberInFile;
-            public string NameForProgress { get { return this.Name + (this.ChunkNumberInFile > 0 ? " #" + this.ChunkNumberInFile.ToString() : ""); } }
-            public readonly long StartOffset;
-            public readonly long EndOffset;
-            public long Length { get { return this.EndOffset - this.StartOffset; } }
-        }
-        private long SplitFile(ShardFile[] shardFiles, long[] lineCounts, SplitChunk ch, int shardSize, object taskKey, bool lockStreams)
+        private long SplitFile(ShardFile[] shardFiles, long[] lineCounts, FileChunk ch, int shardSize, object taskKey, bool lockStreams)
         {
             long linesTrimmed = 0;
             long linesStripped = 0;
@@ -1218,34 +1143,17 @@ namespace MurrayGrant.MassiveSort.Actions
 
             return sortChunks;
         }
-        private IComparer<byte[]> GetByteArrayComparer()
-        {
-            switch (_Conf.Comparer)
-            {
-                case MergeConf.Comparers.Clr:
-                    return Comparers.ClrByteArrayComparer.Value;
-                case MergeConf.Comparers.Native:
-                    return Comparers.PInvokeByteArrayComparer.Value;
-                default:
-                    throw new Exception("Unknown comparer: " + _Conf.Comparer);
-            }
-        }
-        private IEqualityComparer<byte[]> GetByteArrayEqualityComparer()
-        {
-            var result = (IEqualityComparer<byte[]>)GetByteArrayComparer();
-            return result;
-        }
 
         private IComparer<OffsetAndLength> GetOffsetComparer(byte[] data)
         {
-            switch (_Conf.Comparer)
+            switch (_Conf.SortOrder)
             {
-                case MergeConf.Comparers.Clr:
-                    return new Comparers.ClrOffsetComparer(data);
-                case MergeConf.Comparers.Native:
-                    throw new NotImplementedException("Native Offset Comparer is not yet implemented.");
+                case MergeConf.SortOrders.Dictionary:
+                    return new Comparers.ClrOffsetDictionaryComparer(data);
+                case MergeConf.SortOrders.Length:
+                    return new Comparers.ClrOffsetLengthComparer(data);
                 default:
-                    throw new Exception("Unknown comparer: " + _Conf.Comparer);
+                    throw new Exception("Unknown comparer: " + _Conf.SortOrder);
             }
         }
 
@@ -1472,8 +1380,8 @@ namespace MurrayGrant.MassiveSort.Actions
                 Console.WriteLine("  IO Workers: " + _Conf.IOWorkers);
                 Console.WriteLine("  Temp Folder: " + _Conf.TempFolder);
                 Console.WriteLine("  Max Outstanding Chunks: " + _Conf.MaxOutstandingSortedChunks);
+                Console.WriteLine("  Sort By: " + _Conf.SortOrder);
                 Console.WriteLine("  Sort Algorithm: " + _Conf.SortAlgorithm);
-                Console.WriteLine("  Comparer: " + _Conf.Comparer);
                 Console.WriteLine("  Leave Duplicates: " + _Conf.LeaveDuplicates);
                 Console.WriteLine("  Save Stats: " + _Conf.SaveStats);
                 Console.WriteLine("  Whitespace: " + _Conf.Whitespace);
