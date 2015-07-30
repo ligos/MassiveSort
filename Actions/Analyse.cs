@@ -33,6 +33,17 @@ namespace MurrayGrant.MassiveSort.Actions
         public AnalyseConf()
             : base()
         {
+            var pid = System.Diagnostics.Process.GetCurrentProcess().Id;
+            this.TempFolder = Path.Combine(Helpers.GetBaseTempFolder(), pid.ToString());        // Temp folder is specific to process id, so we can run in parallel.
+            this.Workers = Helpers.PhysicalCoreCount();
+
+            this.LargeFileThresholdSize = 128 * 1024L * 1024L;        // 128MB
+            this.LargeFileChunkSize = 32 * 1024 * 1024;               // 32MB
+
+            this.ReadBufferSize = 64 * 1024;                // Buffer size to use when reading files.
+            this.LineBufferSize = 64 * 1024;                // Buffer size to use when reading lines (also max line length).
+
+            this.OutputFormats = new OutputFormat[] { OutputFormat.Plain };
         }
 
         public static string GetUsageText()
@@ -78,6 +89,15 @@ namespace MurrayGrant.MassiveSort.Actions
         public int ReadBufferSize { get; set; }
 
 
+        public OutputFormat[] OutputFormats { get; set; }
+        public enum OutputFormat
+        {
+            Plain,
+            Csv,
+            Tsv,
+            Json,
+        }
+
         public AnalyseConf ExtraParsing()
         {
             return this;
@@ -97,7 +117,7 @@ namespace MurrayGrant.MassiveSort.Actions
         private readonly AnalyseConf _Conf;
         private readonly IProgress<BasicProgress> _Progress = new ConsoleProgressReporter();
         private CancellationToken _CancelToken;
-        
+        private DateTimeOffset _AnalysisStartedAt;
 
         public Analyse(AnalyseConf conf)
         {
@@ -128,6 +148,7 @@ namespace MurrayGrant.MassiveSort.Actions
             PrintConf();        // Print the config settings, in debug mode.
 
             var filesToProcess = this.GatherFiles();
+            _AnalysisStartedAt = DateTimeOffset.Now;
             if (token.IsCancellationRequested) return;
 
             var aggregateSummaries = this.AnalyseFiles(filesToProcess);
@@ -181,6 +202,7 @@ namespace MurrayGrant.MassiveSort.Actions
                 if (_CancelToken.IsCancellationRequested) break;
             }
             acc.TotalLines = (ulong)reader.LinesRead;
+            acc.FileSizeBytes = (ulong)(ch.EndOffset - ch.StartOffset);
             sw.Stop();
 
             _Progress.Report(new TaskProgress(" Done.", true, taskKey));
@@ -190,6 +212,21 @@ namespace MurrayGrant.MassiveSort.Actions
         private void WriteResults(IEnumerable<RawByteAccumulator> accs)
         {
             if (_CancelToken.IsCancellationRequested) return;
+
+            var outputFormats = this._Conf.OutputFormats ?? new AnalyseConf.OutputFormat[] { };
+            foreach (var a in accs)
+            {
+                if (outputFormats.Contains(AnalyseConf.OutputFormat.Plain))
+                {
+                    var analysisPath = Path.ChangeExtension(a.FullPath, "analysis.txt");
+                    using (var writer = new StreamWriter(analysisPath, false, Encoding.UTF8))
+                    {
+                        a.WriteAsPlainText(writer, _AnalysisStartedAt);
+                        writer.Flush();
+                    }
+                }
+                if (_CancelToken.IsCancellationRequested) return;
+            }
         }
 
         private void PrintConf()
@@ -212,6 +249,7 @@ namespace MurrayGrant.MassiveSort.Actions
 
             public bool IsSorted;           // True if the file is sorted.
             public UInt64 TotalLines;
+            public UInt64 FileSizeBytes;
             public UInt64[] LineCountByLength;      // Initialise to 64 and grow as long lines are encountered.
             public void AddOneByLength(int length)
             {
@@ -244,14 +282,30 @@ namespace MurrayGrant.MassiveSort.Actions
                     throw new Exception("Cannot add accumulators for different files.");
 
                 this.TotalLines = this.TotalLines + other.TotalLines;
+                this.FileSizeBytes = this.FileSizeBytes + other.FileSizeBytes;
 
                 var longestLineCountLength = Math.Max(this.LineCountByLength.Length, other.LineCountByLength.Length);
                 if (this.LineCountByLength.Length < longestLineCountLength)
                     Array.Resize(ref this.LineCountByLength, longestLineCountLength);
-                for (int i = 0; i < this.LineCountByLength.Length; i++)
+                for (int i = 0; i < Math.Min(this.LineCountByLength.Length, other.LineCountByLength.Length); i++)
                     this.LineCountByLength[i] = this.LineCountByLength[i] + other.LineCountByLength[i];
                 
                 return this;
+            }
+
+            public void WriteAsPlainText(TextWriter writer, DateTimeOffset analysisDatestamp)
+            {
+                writer.WriteLine("MassiveSort - Analysis of file '{0}', as at {1}", Path.GetFileName(this.FullPath), analysisDatestamp);
+                writer.WriteLine("File Size: {0:N0} bytes ({1:N1} MB)", this.FileSizeBytes, this.FileSizeBytes / Constants.OneMbAsDouble);
+                writer.WriteLine("Total Lines: {0:N0}", this.TotalLines);
+            }
+            public object ToObject(DateTimeOffset analysisDatestamp)
+            {
+                throw new NotImplementedException();
+            }
+            public IEnumerable<IEnumerable<string>> ToTableOfStrings(DateTimeOffset analysisDatestamp)
+            {
+                throw new NotImplementedException();
             }
         }
 

@@ -25,7 +25,7 @@ namespace MurrayGrant.MassiveSort
 
         public override string ToString()
         {
-            return String.Format("{0:N0} lines, {1:N1} MB", LineOffsets.Length, Chunk.Length / Helpers.OneMbAsDouble);
+            return String.Format("{0:N0} lines, {1:N1} MB", LineOffsets.Length, Chunk.Length / Constants.OneMbAsDouble);
         }
     }
 }

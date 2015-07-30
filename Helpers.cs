@@ -24,8 +24,6 @@ namespace MurrayGrant.MassiveSort
 {
     public static class Helpers
     {
-        public static readonly double OneMbAsDouble = 1024.0 * 1024.0;
-
         public static IEnumerable<string> YieldLines(this FileInfo fi, Encoding enc, int bufferSize)
         {
             using (var stream = new FileStream(fi.FullName, FileMode.Open, FileAccess.Read, FileShare.Read, bufferSize))

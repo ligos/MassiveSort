@@ -8,6 +8,8 @@ namespace MurrayGrant.MassiveSort
 {
     public static class Constants
     {
+        public static readonly double OneMbAsDouble = 1024.0 * 1024.0;
+
         public const char NewLine = '\n';
         public const byte NewLineAsByte = (byte)'\n';
         public const char NewLineAlt = '\r';

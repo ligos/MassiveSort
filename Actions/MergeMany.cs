@@ -378,7 +378,7 @@ namespace MurrayGrant.MassiveSort.Actions
 
     public class MergeMany : ICmdVerb, IDisposable
     {
-        private readonly double oneMbAsDouble = Helpers.OneMbAsDouble;
+        private readonly double oneMbAsDouble = Constants.OneMbAsDouble;
         private static string emptyShardFilename = "!";
 
         private readonly MergeConf _Conf;
