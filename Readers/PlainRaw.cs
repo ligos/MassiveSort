@@ -44,6 +44,9 @@ namespace MurrayGrant.MassiveSort.Readers
         }
         public IEnumerable<ByteArraySegment> ReadAll(string fullPath, long startOffset, long endOffset)
         {
+            if (startOffset > endOffset)
+                throw new ArgumentOutOfRangeException("startOffset", startOffset, "Start must be before End.");
+
             // Counters - these are set on public properties at the end of the loop.
             long buffersRead = 0;
             long linesRead = 0;
@@ -89,6 +92,7 @@ namespace MurrayGrant.MassiveSort.Readers
                         {
                             // The offset and length are valid, yield to consumer.
                             var result = new ByteArraySegment(lineBuffer, ol.Offset, ol.Length);
+                            linesRead++;
                             yield return result;
 
                             idx += ol.Length + 1;       // Assume at least one new line after the word.
@@ -124,6 +128,13 @@ namespace MurrayGrant.MassiveSort.Readers
 
         public IList<FileChunk> ConvertFilesToSplitChunks(IEnumerable<FileInfo> files, long thresholdSize, long chunkSize)
         {
+            if (thresholdSize <= 0L)
+                throw new ArgumentOutOfRangeException("thresholdSize", thresholdSize, "Threshold must be greater than zero.");
+            if (chunkSize <= 0L)
+                throw new ArgumentOutOfRangeException("chunkSize", chunkSize, "Chunk Size must be greater than zero.");
+            if (thresholdSize <= chunkSize)
+                throw new ArgumentOutOfRangeException("thresholdSize", thresholdSize, "Threshold must be greater than Chunk Size.");
+
             // Sort be size, descending, to process larger chunks first.
             // To try to keep more cores busy for longer and not end up with a single large chunk dominating split time.
             var largestToSmallestFiles = files.OrderByDescending(x => x.Length);
