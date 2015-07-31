@@ -469,7 +469,8 @@ namespace MurrayGrant.MassiveSort.Actions
                 _Progress.Report(new BasicProgress(String.Format("Gathering files to merge from '{0}'.", String.Join("; ", _Conf.Inputs)), true));
 
             var sw = Stopwatch.StartNew();
-            var result = Helpers.GatherFiles(_Conf.Inputs);
+            // TODO: exclude / include filters.
+            var result = Helpers.GatherFiles(_Conf.Inputs, Enumerable.Empty<string>());
             sw.Stop();
 
             this.WriteStats("Found {0:N0} files to merge, totaling {1:N1}MB. Time to search: {2:N1}ms.", result.Count, result.Sum(x => x.Length) / oneMbAsDouble, sw.Elapsed.TotalMilliseconds);

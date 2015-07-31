@@ -10,6 +10,8 @@ namespace MurrayGrant.MassiveSort
     {
         public static readonly double OneMbAsDouble = 1024.0 * 1024.0;
 
+        public static readonly Encoding Utf8NoBom = new UTF8Encoding(false);
+
         public const char NewLine = '\n';
         public const byte NewLineAsByte = (byte)'\n';
         public const char NewLineAlt = '\r';

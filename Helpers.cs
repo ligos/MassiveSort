@@ -408,13 +408,14 @@ namespace MurrayGrant.MassiveSort
             return true;
         }
 
-        public static ICollection<FileInfo> GatherFiles(IEnumerable<string> paths)
+        public static ICollection<FileInfo> GatherFiles(IEnumerable<string> paths, IEnumerable<string> endingsToExclude)
         {
             var result = paths.SelectMany(i =>
                                 Directory.Exists(i) ? new DirectoryInfo(i).EnumerateFiles("*", SearchOption.AllDirectories)
                                    : File.Exists(i) ? new FileInfo[] { new FileInfo(i) }
                                    : new FileInfo[] { }
                         )
+                        .Where(x => !endingsToExclude.Any(e => x.Name.EndsWith(e, StringComparison.CurrentCultureIgnoreCase)))
                         .ToList();
             return result;
         }
@@ -431,6 +432,20 @@ namespace MurrayGrant.MassiveSort
         public static bool Contains(this string s, string toFind, StringComparison comparison)
         {
             return s.IndexOf(toFind, 0, comparison) != -1;
+        }
+
+        public static T[] RemoveTrailing<T>(this T[] array, Func<T, bool> remove)
+        {
+            int idx = 0;
+            for (int i = array.Length - 1; i >= 0; i--)
+            {
+                if (!remove(array[i]))
+                {
+                    idx = i;
+                    break;
+                }
+            }
+            return array.Take(idx + 1).ToArray();
         }
     }
 }

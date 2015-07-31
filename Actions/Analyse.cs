@@ -35,6 +35,7 @@ namespace MurrayGrant.MassiveSort.Actions
         {
             var pid = System.Diagnostics.Process.GetCurrentProcess().Id;
             this.TempFolder = Path.Combine(Helpers.GetBaseTempFolder(), pid.ToString());        // Temp folder is specific to process id, so we can run in parallel.
+            this.FileEnding = "Analysis.txt";
             this.Workers = Helpers.PhysicalCoreCount();
 
             this.LargeFileThresholdSize = 128 * 1024L * 1024L;        // 128MB
@@ -55,6 +56,8 @@ namespace MurrayGrant.MassiveSort.Actions
         [OptionArray('i', "input")]
         public string[] Inputs { get; set; }
 
+        [Option('e', "file-ending")]
+        public string FileEnding { get; set; }
 
         [Option('t', "temp-folder")]
         public string TempFolder { get; set; }
@@ -62,6 +65,7 @@ namespace MurrayGrant.MassiveSort.Actions
         [Option('w', "workers")]
         public int Workers { get; set; }
 
+        
         /// <summary>
         /// Files larger than this (bytes) will be processed in smaller chunks.
         /// To allow large files to gain benefits of parallelism too.
@@ -163,7 +167,7 @@ namespace MurrayGrant.MassiveSort.Actions
             _Progress.Report(new BasicProgress(String.Format("Gathering files to analyse from '{0}'.", String.Join("; ", _Conf.Inputs)), true));
 
             var sw = Stopwatch.StartNew();
-            var result = Helpers.GatherFiles(_Conf.Inputs);
+            var result = Helpers.GatherFiles(_Conf.Inputs, new [] { this._Conf.FileEnding });
             sw.Stop();
 
             return result;
@@ -199,6 +203,7 @@ namespace MurrayGrant.MassiveSort.Actions
             foreach (var line in reader.ReadAll(ch.FullPath, ch.StartOffset, ch.EndOffset))
             {
                 acc.AddOneByLength(line.Count);
+                acc.AddOneToCategoryMasks(line);
                 if (_CancelToken.IsCancellationRequested) break;
             }
             acc.TotalLines = (ulong)reader.LinesRead;
@@ -218,8 +223,8 @@ namespace MurrayGrant.MassiveSort.Actions
             {
                 if (outputFormats.Contains(AnalyseConf.OutputFormat.Plain))
                 {
-                    var analysisPath = Path.ChangeExtension(a.FullPath, "analysis.txt");
-                    using (var writer = new StreamWriter(analysisPath, false, Encoding.UTF8))
+                    var analysisPath = Path.ChangeExtension(a.FullPath, _Conf.FileEnding);
+                    using (var writer = new StreamWriter(analysisPath, false, Constants.Utf8NoBom))
                     {
                         a.WriteAsPlainText(writer, _AnalysisStartedAt);
                         writer.Flush();
@@ -245,6 +250,9 @@ namespace MurrayGrant.MassiveSort.Actions
             {
                 this.FullPath = fullPath;
                 this.LineCountByLength = new UInt64[64];
+                // Only 7 bits are used in the CharCategory masks.
+                this.CountsByAllCategoryMask = new UInt64[128];
+                this.CountsByAnyCategoryMask = new UInt64[7];
             }
 
             public bool IsSorted;           // True if the file is sorted.
@@ -258,8 +266,57 @@ namespace MurrayGrant.MassiveSort.Actions
                 this.LineCountByLength[length] = this.LineCountByLength[length] + 1;
             }
 
-            public List<UInt64> CountsByAllCategoryMask;        // CharCategory, added together, is the index.
-            public List<UInt64> CountsByAnyCategoryMask;        // The nth bit of the CharCategory is the index.
+            public UInt64[] CountsByAllCategoryMask;        // CharCategory, added together, is the index.
+            public UInt64[] CountsByAnyCategoryMask;        // The nth bit of the CharCategory is the index.
+            public void AddOneToCategoryMasks(ByteArraySegment line)
+            {
+                // TODO: decode $HEX[] to a byte array.
+
+                int allMasks = 0;
+                for (int i = 0; i < line.Count; i++)
+                {
+                    var b = line.Array[line.Offset+i];
+                    if (b >= 0x41 && b <= 0x5a)
+                        // Upper letter
+                        allMasks |= (int)CharCategory.UppercaseLetter;
+                    else if (b >= 0x61 && b <= 0x7a)
+                        // Lower letter.
+                        allMasks |= (int)CharCategory.LowercaseLetter;
+                    else if (b >= 0x30 && b <= 0x39)
+                        // Number.
+                        allMasks |= (int)CharCategory.Number;
+                    else if (b == 0x20 || b == 0x09 || b == 0x0b)
+                        // Whitespace (or tab).
+                        allMasks |= (int)CharCategory.Whitespace;
+                    else if (b <= 0x1f)
+                        // Low control.
+                        allMasks |= (int)CharCategory.LowControl;
+                    else if (b >= 0x7f)
+                        // High / non-ascii.
+                        allMasks |= (int)CharCategory.HighNonAscii;
+                    else
+                        // Punctuation (which is scattered across the ascii table).
+                        allMasks |= (int)CharCategory.Punctuation;
+                }
+
+                this.CountsByAllCategoryMask[allMasks] = this.CountsByAllCategoryMask[allMasks] + 1;
+                if ((allMasks & 0x01) == 0x01)
+                    this.CountsByAnyCategoryMask[0] = this.CountsByAnyCategoryMask[0] + 1;
+                if ((allMasks & 0x02) == 0x02)
+                    this.CountsByAnyCategoryMask[1] = this.CountsByAnyCategoryMask[1] + 1;
+                if ((allMasks & 0x04) == 0x04)
+                    this.CountsByAnyCategoryMask[2] = this.CountsByAnyCategoryMask[2] + 1;
+                if ((allMasks & 0x08) == 0x08)
+                    this.CountsByAnyCategoryMask[3] = this.CountsByAnyCategoryMask[3] + 1;
+                if ((allMasks & 0x10) == 0x10)
+                    this.CountsByAnyCategoryMask[4] = this.CountsByAnyCategoryMask[4] + 1;
+                if ((allMasks & 0x20) == 0x20)
+                    this.CountsByAnyCategoryMask[5] = this.CountsByAnyCategoryMask[5] + 1;
+                if ((allMasks & 0x40) == 0x40)
+                    this.CountsByAnyCategoryMask[6] = this.CountsByAnyCategoryMask[6] + 1;
+                if ((allMasks & 0x80) == 0x80)
+                    this.CountsByAnyCategoryMask[7] = this.CountsByAnyCategoryMask[7] + 1;
+            }
 
             public readonly RawByteAccumulatorEx More;
 
@@ -267,6 +324,7 @@ namespace MurrayGrant.MassiveSort.Actions
             [Flags]
             public enum CharCategory : byte
             {
+                Empty = 0x00,
                 UppercaseLetter = 0x01,
                 LowercaseLetter = 0x02,
                 Number = 0x04,
@@ -289,7 +347,12 @@ namespace MurrayGrant.MassiveSort.Actions
                     Array.Resize(ref this.LineCountByLength, longestLineCountLength);
                 for (int i = 0; i < Math.Min(this.LineCountByLength.Length, other.LineCountByLength.Length); i++)
                     this.LineCountByLength[i] = this.LineCountByLength[i] + other.LineCountByLength[i];
-                
+
+                for (int i = 0; i < this.CountsByAllCategoryMask.Length; i++)
+                    this.CountsByAllCategoryMask[i] = this.CountsByAllCategoryMask[i] + other.CountsByAllCategoryMask[i];
+                for (int i = 0; i < this.CountsByAnyCategoryMask.Length; i++)
+                    this.CountsByAnyCategoryMask[i] = this.CountsByAnyCategoryMask[i] + other.CountsByAnyCategoryMask[i];
+
                 return this;
             }
 
@@ -298,6 +361,39 @@ namespace MurrayGrant.MassiveSort.Actions
                 writer.WriteLine("MassiveSort - Analysis of file '{0}', as at {1}", Path.GetFileName(this.FullPath), analysisDatestamp);
                 writer.WriteLine("File Size: {0:N0} bytes ({1:N1} MB)", this.FileSizeBytes, this.FileSizeBytes / Constants.OneMbAsDouble);
                 writer.WriteLine("Total Lines: {0:N0}", this.TotalLines);
+                writer.WriteLine("Average Line Length (bytes): {0:N2}", (double)this.FileSizeBytes / (double)this.TotalLines);
+
+                writer.WriteLine();
+                writer.WriteLine("Length (bytes) Histogram:");
+                var lineCountByLength = this.LineCountByLength.RemoveTrailing(x => x == 0);
+                for (int i = 0; i < lineCountByLength.Length; i++)
+                    writer.WriteLine("{0}: {1:N0} ({2:P2})", i, lineCountByLength[i], (double)lineCountByLength[i] / (double)this.TotalLines);
+
+                writer.WriteLine();
+                writer.WriteLine("Charset Counts:");
+                foreach (var ch in this.CountsByAllCategoryMask
+                    .Select((count, i) => new { name = this.CharCategoryMaskToFriendly(i), count })
+                    .GroupBy(x => x.name)
+                    .Select(x => new
+                    {
+                        name = x.Key,
+                        count = x.Sum(z => (decimal)z.count),
+                    })
+                    .Where(x => x.count > 0)
+                    .OrderBy(x => x.name))
+                    writer.WriteLine("{0}: {1:N0} ({2:P2})", ch.name, ch.count, (double)ch.count / (double)this.TotalLines);
+
+                writer.WriteLine();
+                writer.WriteLine("Lines With Char Category:");
+                for (int i = 0; i < this.CountsByAnyCategoryMask.Length; i++)
+                    writer.WriteLine("{0}: {1:N0} ({2:P2})", ((CharCategory)(1 << i)).ToString(), this.CountsByAnyCategoryMask[i], (double)this.CountsByAnyCategoryMask[i] / (double)this.TotalLines);
+
+                writer.WriteLine();
+                writer.WriteLine("Full Charset Counts:");
+                for (int i = 0; i < this.CountsByAllCategoryMask.Length; i++)
+                    if (this.CountsByAllCategoryMask[i] != 0)
+                        writer.WriteLine("{0}: {1:N0} ({2:P2})", ((CharCategory)i).ToString(), this.CountsByAllCategoryMask[i], (double)this.CountsByAllCategoryMask[i] / (double)this.TotalLines);
+
             }
             public object ToObject(DateTimeOffset analysisDatestamp)
             {
@@ -307,6 +403,39 @@ namespace MurrayGrant.MassiveSort.Actions
             {
                 throw new NotImplementedException();
             }
+
+            public string CharCategoryMaskToFriendly(int mask)
+            {
+                var result = "";
+
+                if ((mask & (int)CharCategory.LowercaseLetter) == (int)CharCategory.LowercaseLetter
+                    && (mask & (int)CharCategory.UppercaseLetter) == (int)CharCategory.UppercaseLetter)
+                    result += "Mixed";
+                else if ((mask & (int)CharCategory.LowercaseLetter) != (int)CharCategory.LowercaseLetter
+                    && (mask & (int)CharCategory.UppercaseLetter) == (int)CharCategory.UppercaseLetter)
+                    result += "Upper";
+                else if ((mask & (int)CharCategory.LowercaseLetter) == (int)CharCategory.LowercaseLetter
+                    && (mask & (int)CharCategory.UppercaseLetter) != (int)CharCategory.UppercaseLetter)
+                    result += "Lower";
+
+                if ((mask & (int)CharCategory.Number) == (int)CharCategory.Number)
+                    result += "Number";
+
+                if ((mask & (int)CharCategory.Whitespace) == (int)CharCategory.Whitespace
+                    || (mask & (int)CharCategory.Punctuation) == (int)CharCategory.Punctuation)
+                    result += "Symbol";
+
+                if ((mask & (int)CharCategory.LowControl) == (int)CharCategory.LowControl)
+                    result += "Special";
+
+                if ((mask & (int)CharCategory.HighNonAscii) == (int)CharCategory.HighNonAscii)
+                    result += "Extended";
+
+                if (mask == 0)
+                    result += "Empty";
+                return result;
+            }
+
         }
 
         public class RawByteAccumulatorEx
