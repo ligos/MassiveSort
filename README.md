@@ -6,10 +6,17 @@ Lets your sort and merge really, really big text files.
 
 ## Getting Started ##
 
-* Make sure you have .NET 4.5.2 installed
+* Make sure you have .NET 4.5.2 / Mono 3.2+ installed
 * [Download the latest release](https://bitbucket.org/ligos/massivesort/downloads)
 * Unzip to a folder of your choice
 * `MassiveSort.exe merge -o sortedFile.txt -i unsortedFile.txt`
+
+## Recent Changes ##
+
+### 0.1.3 ###
+
+* Linux support via Mono (minimal testing on Ubuntu 14.04 / Mono 3.2)
+* `--sort-by` option to allow sorting by length / dictionary order.
 
 ## Other Options ##
 
@@ -29,7 +36,6 @@ More details and examples can be found in the [Merge Verb](https://bitbucket.org
 
 ## Longer Term Goals ##
 
-* Linux support using Mono
 * Merge into a central file, with tags
 * Configuration files for source files, so you don't to remember lots of options to import
 * General purpose large scale merge sort on any `IEnumerable<T>`
