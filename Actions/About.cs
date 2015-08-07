@@ -38,6 +38,7 @@ namespace MurrayGrant.MassiveSort.Actions
         public static readonly string Copyright = typeof(Program).Assembly.CustomAttributes.First(x => x.AttributeType == typeof(System.Reflection.AssemblyCopyrightAttribute)).ConstructorArguments.First().Value.ToString();
         public static readonly string Version = typeof(Program).Assembly.CustomAttributes.First(x => x.AttributeType == typeof(System.Reflection.AssemblyFileVersionAttribute)).ConstructorArguments.First().Value.ToString();
         public static readonly string ProjectUrl = typeof(Program).Assembly.CustomAttributes.First(x => x.AttributeType == typeof(System.Reflection.AssemblyMetadataAttribute) && x.ConstructorArguments.First().Value.ToString() == "project-url").ConstructorArguments.Skip(1).First().Value.ToString();
+        public static readonly string ProductName = typeof(Program).Assembly.CustomAttributes.First(x => x.AttributeType == typeof(System.Reflection.AssemblyProductAttribute)).ConstructorArguments.First().Value.ToString();
 
         public About()
         {
@@ -61,7 +62,7 @@ namespace MurrayGrant.MassiveSort.Actions
         {
             // Display license, authorship and 3rd party library details.
             
-            Console.WriteLine("About MassiveSort");
+            Console.WriteLine("About " + ProductName);
             Console.WriteLine(Copyright);
             Console.WriteLine(ProjectUrl);
             Console.WriteLine("Available under terms of Apache License (see LICENSE.txt)");

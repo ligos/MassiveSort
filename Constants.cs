@@ -9,6 +9,7 @@ namespace MurrayGrant.MassiveSort
     public static class Constants
     {
         public static readonly double OneMbAsDouble = 1024.0 * 1024.0;
+        public static readonly double OneGbAsDouble = 1024.0 * 1024.0 * 1024.0;
 
         public static readonly Encoding Utf8NoBom = new UTF8Encoding(false);
 

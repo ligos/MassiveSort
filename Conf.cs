@@ -48,6 +48,8 @@ namespace MurrayGrant.MassiveSort
         public MurrayGrant.MassiveSort.Actions.AnalyseConf AnalyseOptions { get { return this.AnalyseOptions_Uk ?? this.AnalyseOptions_Us; } }
         [VerbOption("cleantemp")]
         public MurrayGrant.MassiveSort.Actions.CleanTempConf CleanTempOptions { get; set; }
+        [VerbOption("crash")]
+        public MurrayGrant.MassiveSort.Actions.CrashConf CrashOptions { get; set; }
         [VerbOption("about")]
         public MurrayGrant.MassiveSort.Conf AboutOptions { get; set; }
     

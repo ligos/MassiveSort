@@ -447,5 +447,23 @@ namespace MurrayGrant.MassiveSort
             }
             return array.Take(idx + 1).ToArray();
         }
+
+        /// <summary>
+        /// Gets a string which includes all inner exceptions.
+        /// </summary>
+        /// <returns></returns>
+        public static String ToFullString(this Exception ex)
+        {
+            var e = ex;
+            var result = e.ToString();
+
+            while (e.InnerException != null)
+            {
+                e = e.InnerException;
+                result = result + Environment.NewLine + e.ToString();
+            }
+
+            return result;
+        }
     }
 }

@@ -46,6 +46,7 @@
   <ItemGroup>
     <Compile Include="Actions\About.cs" />
     <Compile Include="Actions\Analyse.cs" />
+    <Compile Include="Actions\Crash.cs" />
     <Compile Include="ByteArraySegment.cs" />
     <Compile Include="Comparers\ClrOffsetDictionaryComparer.cs" />
     <Compile Include="Comparers\ClrOffsetLengthComparer.cs" />
@@ -54,6 +55,7 @@
     <Compile Include="Conf.cs" />
     <Compile Include="ConsoleProgressReporter.cs" />
     <Compile Include="Constants.cs" />
+    <Compile Include="CrashDumper.cs" />
     <Compile Include="FileResult.cs" />
     <Compile Include="Helpers.cs" />
     <Compile Include="Actions\CleanTemp.cs" />
