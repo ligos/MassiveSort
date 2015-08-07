@@ -13,6 +13,10 @@ Lets your sort and merge really, really big text files.
 
 ## Recent Changes ##
 
+### 0.1.4 ###
+
+* Better crash dump support
+
 ### 0.1.3 ###
 
 * Linux support via Mono (minimal testing on Ubuntu 14.04 / Mono 3.2)
