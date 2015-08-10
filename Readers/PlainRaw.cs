@@ -95,7 +95,7 @@ namespace MurrayGrant.MassiveSort.Readers
                             linesRead++;
                             yield return result;
 
-                            idx += ol.Length + 1;       // Assume at least one new line after the word.
+                            idx = ol.Offset + ol.Length + 1;       // Assume at least one new line after the word.
                         }
                         else
                         {
@@ -195,8 +195,16 @@ namespace MurrayGrant.MassiveSort.Readers
         {
             for (int i = 1; i < len; i++)
             {
-                if ((buf[i - 1] == Constants.NewLineAsByte || buf[i - 1] == Constants.NewLineAsByteAlt)
-                    && (buf[i] == Constants.NewLineAsByte || buf[i] == Constants.NewLineAsByteAlt))
+                if (
+                    // \n\n
+                    (buf[i - 1] == Constants.NewLineAsByte && buf[i] == Constants.NewLineAsByte)
+                    // \r\r
+                    || (buf[i - 1] == Constants.NewLineAsByteAlt && buf[i] == Constants.NewLineAsByteAlt)
+                    // \r\n\r\n
+                    || (i >= 4 && buf[i - 3] == Constants.NewLineAsByteAlt && buf[i - 2] == Constants.NewLineAsByte && buf[i - 1] == Constants.NewLineAsByteAlt && buf[i] == Constants.NewLineAsByte)
+                    // \n\r\n\r
+                    || (i >= 4 && buf[i - 3] == Constants.NewLineAsByte && buf[i - 2] == Constants.NewLineAsByteAlt && buf[i - 1] == Constants.NewLineAsByte && buf[i] == Constants.NewLineAsByteAlt)
+                )
                     return true;
             }
             return false;
