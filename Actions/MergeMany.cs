@@ -481,6 +481,7 @@ namespace MurrayGrant.MassiveSort.Actions
             // Stage 1: read all files and split lines into buckets.
 
             _Progress.Report(new BasicProgress(String.Format("Splitting {0:N0} file(s) (round 1)...", files.Count()), true));
+            if (!files.Any()) return Enumerable.Empty<FileResult>();
             this.WriteStats("Splitting {0:N0} file(s) (round 1)...", files.Count());
             var sw = Stopwatch.StartNew();
             var shardedFileDetails = this.DoTopLevelSplit(files);
@@ -901,6 +902,7 @@ namespace MurrayGrant.MassiveSort.Actions
         {
             if (File.Exists(_Conf.OutputFile))
                 File.Delete(_Conf.OutputFile);
+            if (!toSort.Any()) return;
 
             _Progress.Report(new BasicProgress("Sorting files.", true));
 
