@@ -782,7 +782,7 @@ namespace MurrayGrant.MassiveSort.Actions
                 shard = seg.Array[seg.Offset + (shardSize - 1)];
 
 #if DEBUG
-            if (System.Diagnostics.Debugger.IsAttached)
+            if (System.Diagnostics.Debugger.IsAttached && seg.Count > 0 && seg.Array != null)
             {
                 var wordAsBytes = seg.Array.Skip(seg.Offset).Take(seg.Count).ToArray();
                 var wordAsNativeString = Encoding.Default.GetString(wordAsBytes);
