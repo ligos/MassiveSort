@@ -13,6 +13,10 @@ Lets your sort and merge really, really big text files.
 
 ## Recent Changes ##
 
+### 0.1.5 ###
+
+* Fixed bugs in end of line handling and blank line detection
+
 ### 0.1.4 ###
 
 * Better crash dump support
