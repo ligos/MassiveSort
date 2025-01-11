@@ -9,7 +9,7 @@ namespace MurrayGrant.MassiveSort
 {
     public sealed class ShardFile : IDisposable
     {
-        // The Name property of the FileStream class isn't a simple filed access, but does a security check as well.
+        // The Name property of the FileStream class isn't a simple field access, but does a security check as well.
         // This eventually takes out some locks in native code, which can (and does) deadlock with 4+ CPUs.
 
         public readonly string FullPath;
