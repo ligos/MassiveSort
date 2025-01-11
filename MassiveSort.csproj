@@ -1,90 +1,38 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
-<Project ToolsVersion="12.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
-  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
   <PropertyGroup>
-    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
-    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
-    <ProjectGuid>{41C9F67F-9378-4470-A0F2-905151CCB384}</ProjectGuid>
     <OutputType>Exe</OutputType>
-    <AppDesignerFolder>Properties</AppDesignerFolder>
+    <TargetFramework>net4.8</TargetFramework>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <StartupObject>MurrayGrant.MassiveSort.Program</StartupObject>
     <RootNamespace>MurrayGrant.MassiveSort</RootNamespace>
-    <AssemblyName>MassiveSort</AssemblyName>
-    <TargetFrameworkVersion>v4.5.2</TargetFrameworkVersion>
-    <FileAlignment>512</FileAlignment>
-    <TargetFrameworkProfile />
-  </PropertyGroup>
-  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <PlatformTarget>AnyCPU</PlatformTarget>
-    <DebugSymbols>true</DebugSymbols>
-    <DebugType>full</DebugType>
-    <Optimize>false</Optimize>
-    <OutputPath>bin\Debug\</OutputPath>
-    <DefineConstants>DEBUG;TRACE</DefineConstants>
-    <ErrorReport>prompt</ErrorReport>
-    <WarningLevel>4</WarningLevel>
+
+    <Title>MassiveSort</Title>
+    <Description>Sorts massive amounts of data</Description>
+    <Company>Murray Grant</Company>
+    <Product>MassiveSort</Product>
+    <Copyright>Copyright © Murray Grant 2015</Copyright>
+
+    <Version>0.1.5</Version>
   </PropertyGroup>
-  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
-    <PlatformTarget>AnyCPU</PlatformTarget>
-    <DebugType>pdbonly</DebugType>
-    <Optimize>true</Optimize>
-    <OutputPath>bin\Release\</OutputPath>
-    <DefineConstants>TRACE</DefineConstants>
-    <ErrorReport>prompt</ErrorReport>
-    <WarningLevel>4</WarningLevel>
-    <Prefer32Bit>false</Prefer32Bit>
-  </PropertyGroup>
+
   <ItemGroup>
-    <Reference Include="CommandLine">
-      <HintPath>packages\CommandLineParser.1.9.71\lib\net45\CommandLine.dll</HintPath>
-    </Reference>
-    <Reference Include="System" />
-    <Reference Include="System.Core" />
-    <Reference Include="Microsoft.CSharp" />
+    <Content Include="LICENSE.txt">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Sorters\TimSort\license.txt">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommandLineParser" Version="1.9.71" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Reference Include="System.Management" />
-    <Reference Include="System.Xml" />
   </ItemGroup>
-  <ItemGroup>
-    <Compile Include="Actions\About.cs" />
-    <Compile Include="Actions\Analyse.cs" />
-    <Compile Include="Actions\Crash.cs" />
-    <Compile Include="ByteArraySegment.cs" />
-    <Compile Include="Comparers\ClrOffsetDictionaryComparer.cs" />
-    <Compile Include="Comparers\ClrOffsetLengthComparer.cs" />
-    <Compile Include="Comparers\ClrByteArrayComparer.cs" />
-    <Compile Include="Comparers\PInvokeByteArrayComparer.cs" />
-    <Compile Include="Conf.cs" />
-    <Compile Include="ConsoleProgressReporter.cs" />
-    <Compile Include="Constants.cs" />
-    <Compile Include="CrashDumper.cs" />
-    <Compile Include="FileResult.cs" />
-    <Compile Include="Helpers.cs" />
-    <Compile Include="Actions\CleanTemp.cs" />
-    <Compile Include="Actions\MergeMany.cs" />
-    <Compile Include="IndexedFileData.cs" />
-    <Compile Include="OffsetAndLength.cs" />
-    <Compile Include="Program.cs" />
-    <Compile Include="Properties\AssemblyInfo.cs" />
-    <Compile Include="Readers\PlainRaw.cs" />
-    <Compile Include="ShardFile.cs" />
-    <Compile Include="Sorters\TimSort\TimSort.cs" />
-    <Compile Include="Sorters\TimSort\TimSortBase.cs" />
-    <Compile Include="Sorters\TimSort\TimSortExtender.cs" />
-    <Compile Include="FileChunk.cs" />
-  </ItemGroup>
-  <ItemGroup>
-    <None Include="App.config" />
-    <None Include="packages.config" />
-  </ItemGroup>
-  <ItemGroup>
-    <Content Include="LICENSE.txt" />
-    <Content Include="Sorters\TimSort\license.txt" />
-  </ItemGroup>
-  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
-  <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
-       Other similar extension points exist, see Microsoft.Common.targets.
-  <Target Name="BeforeBuild">
-  </Target>
-  <Target Name="AfterBuild">
-  </Target>
-  -->
+
 </Project>
