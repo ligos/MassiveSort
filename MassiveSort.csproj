@@ -15,7 +15,7 @@
     <Product>MassiveSort</Product>
     <Copyright>Copyright © Murray Grant 2015</Copyright>
 
-    <Version>0.1.5</Version>
+    <Version>0.1.6</Version>
   </PropertyGroup>
 
   <ItemGroup>
