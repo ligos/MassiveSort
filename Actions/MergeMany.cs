@@ -294,7 +294,16 @@ namespace MurrayGrant.MassiveSort.Actions
         {
             long size;
             if (!String.IsNullOrEmpty(this.MaxSortSize_Raw) && Helpers.TryParseByteSized(this.MaxSortSize_Raw, out size))
-                MaxSortSize = (int)size;
+            {
+                // 2GB is slightly smaller than 2GB, because dotnet arrays can only cope with int32 elements.
+                if (size <= 2L * 1024 * 1024 * 1024
+                    && size > (2L * 1024 * 1024 * 1024) - (1024 * 1024))
+                    MaxSortSize = Int32.MaxValue - (1024 * 1024);
+                else if (size > Int32.MaxValue)
+                    MaxSortSize = Int32.MaxValue;
+                else
+                    MaxSortSize = (int)size;
+            }
             if (!String.IsNullOrEmpty(this.LineBufferSize_Raw) && Helpers.TryParseByteSized(this.LineBufferSize_Raw, out size))
                 LineBufferSize = (int)size;
             if (!String.IsNullOrEmpty(this.ReadBufferSize_Raw) && Helpers.TryParseByteSized(this.ReadBufferSize_Raw, out size))
@@ -340,8 +349,8 @@ namespace MurrayGrant.MassiveSort.Actions
             // Other sanity checks.
             if (MaxSortSize < 1024 * 256)
                 result.AppendLine("'max-sort-size' must be at least 256KB.");
-            if (MaxSortSize > 1024 * 1024 * 1024)
-                result.AppendLine("'max-sort-size' must be less than 1GB.");
+            if (MaxSortSize == Int32.MaxValue)
+                result.AppendLine("'max-sort-size' must be less than 2GB.");
 
             if (LineBufferSize < 1024)
                 result.AppendLine("'line-buffer-size' must be at least 1KB.");
