@@ -16,6 +16,7 @@ Lets your sort and merge really, really big text files.
 ### 0.1.6 ###
 
 * Increase `--max-sort-size` maximum to 2GB
+* Change old BitBucket references to GitHub
 
 ### 0.1.5 ###
 
