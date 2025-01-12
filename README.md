@@ -6,12 +6,16 @@ Lets your sort and merge really, really big text files.
 
 ## Getting Started ##
 
-* Make sure you have .NET 4.5.2 / Mono 3.2+ installed
-* [Download the latest release](https://bitbucket.org/ligos/massivesort/downloads)
+* Make sure you have .NET 4.8 / Mono 3.2+ installed
+* [Download the latest release](https://github.com/ligos/MassiveSort/releases)
 * Unzip to a folder of your choice
 * `MassiveSort.exe merge -o sortedFile.txt -i unsortedFile.txt`
 
 ## Recent Changes ##
+
+### 0.1.6 ###
+
+* Increase `--max-sort-size` maximum to 2GB
 
 ### 0.1.5 ###
 
@@ -40,7 +44,7 @@ MassiveSort can normalise special, non-ascii or non-printable characters into th
 
 MassiveSort can trim or remove whitespace with the `--whitespace` option (note that this can make destructive changes to the lines you are sorting, particularly if there are non-ascii encodings).
 
-More details and examples can be found in the [Merge Verb](https://bitbucket.org/ligos/massivesort/wiki/Verb%20-%20Merge)
+More details and examples can be found in the [Merge Verb](https://github.com/ligos/MassiveSort/wiki/Verb---Merge)
 
 ## Longer Term Goals ##
 
