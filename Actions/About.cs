@@ -25,6 +25,7 @@ using CommandLine;
 
 namespace MurrayGrant.MassiveSort.Actions
 {
+    [Verb("about")]
     public sealed class AboutConf : CommonConf
     {
         public static string GetUsageText()

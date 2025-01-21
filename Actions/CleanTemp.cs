@@ -25,6 +25,7 @@ using CommandLine;
 
 namespace MurrayGrant.MassiveSort.Actions
 {
+    [Verb("cleantemp")]
     public sealed class CleanTempConf : CommonConf
     {
         [Option('t', "temp-folder")]

@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "MassiveSort": {
+      "commandName": "Project",
+      "commandLineArgs": "merge -i C:\\temp\\Wordlists.tiny -o C:\\temp\\wordlist.out.txt --debug"
+    }
+  }
+}

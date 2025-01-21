@@ -23,6 +23,7 @@ using System.IO;
 using System.Diagnostics;
 
 using MurrayGrant.MassiveSort.Actions;
+using CommandLine;
 
 namespace MurrayGrant.MassiveSort
 {
@@ -37,17 +38,21 @@ namespace MurrayGrant.MassiveSort
                 Console.WriteLine("{0} v{1} - {2}", About.ProductName, About.Version, About.Copyright);
                 Console.WriteLine();
 
-                var conf = new Conf();
+                //var conf = new Conf();
                 var verbSelected = "";
                 bool helpRequested = false;
-                var parseSucceeded = CommandLine.Parser.Default.ParseArguments(args, conf, (v, o) =>
-                {
-                    verbSelected = v ?? "";
-                    if (String.Equals(verbSelected, "help", StringComparison.CurrentCultureIgnoreCase))
-                        helpRequested = true;
-                    else if (conf != null)
-                        helpRequested = conf.HelpWasRequested;
-                });
+                Type[] verbTypes = [typeof(AboutConf), typeof(AnalyseConf), typeof(CleanTempConf), typeof(CrashConf), typeof(MergeConf)];
+                var parseResult = CommandLine.Parser.Default.ParseArguments(args, verbTypes);
+                var parseSucceeded = parseResult.Value.GetType() != typeof(NullInstance);
+
+                //,  conf, (v, o) =>
+                //{
+                //    verbSelected = v ?? "";
+                //    if (String.Equals(verbSelected, "help", StringComparison.CurrentCultureIgnoreCase))
+                //        helpRequested = true;
+                //    else if (conf != null)
+                //        helpRequested = conf.HelpWasRequested;
+                //});
 
 
                 // Based on command line verb, determine what we will do.
@@ -58,21 +63,21 @@ namespace MurrayGrant.MassiveSort
                     errorText = "Error: Unable to parse arguments.";
 
                 var verb = verbSelected.ToLower();
-                if (parseSucceeded && verb == "merge")
-                    action = new MergeMany(conf.MergeOptions.ExtraParsing());
+                if (parseSucceeded && parseResult.Value is MergeConf mc)
+                    action = new MergeMany(mc.ExtraParsing());
                 else if (!parseSucceeded && verb == "merge")
                     usageText = MergeConf.GetUsageText();
-                else if (parseSucceeded && (verb == "analyse" || verb == "analyze"))
-                    action = new Analyse(conf.AnalyseOptions.ExtraParsing());
-                else if (!parseSucceeded && (verb == "analyse" || verb == "analyze"))
+                else if (parseSucceeded && parseResult.Value is AnalyseConf ac)
+                    action = new Analyse(ac.ExtraParsing());
+                else if (!parseSucceeded && parseResult.Value is AnalyseConf)
                     usageText = AnalyseConf.GetUsageText();
-                else if (parseSucceeded && verb == "crash")
-                    action = new Crash(conf.CrashOptions);
-                else if (!parseSucceeded && verb == "crash")
+                else if (parseSucceeded && parseResult.Value is CrashConf cc)
+                    action = new Crash(cc);
+                else if (!parseSucceeded && parseResult.Value is CrashConf)
                     usageText = CrashConf.GetUsageText();
-                else if (parseSucceeded && verb == "cleantemp")
-                    action = new CleanTemp(conf.CleanTempOptions);
-                else if (!parseSucceeded && verb == "cleantemp")
+                else if (parseSucceeded && parseResult.Value is CleanTempConf ctc)
+                    action = new CleanTemp(ctc);
+                else if (!parseSucceeded && parseResult.Value is CleanTempConf)
                     usageText = CleanTempConf.GetUsageText();
                 else if (verb == "about")
                     action = new About();

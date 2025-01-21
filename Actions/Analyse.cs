@@ -28,6 +28,8 @@ using MurrayGrant.MassiveSort.Readers;
 namespace MurrayGrant.MassiveSort.Actions
 {
     #region Config
+
+    [Verb("analyse", aliases: [ "analyze" ])]
     public sealed class AnalyseConf : CommonConf
     {
         public AnalyseConf()
@@ -53,8 +55,8 @@ namespace MurrayGrant.MassiveSort.Actions
         }
 
 
-        [OptionArray('i', "input")]
-        public string[] Inputs { get; set; }
+        [Option('i', "input")]
+        public IEnumerable<string> Inputs { get; set; }
 
         [Option('e', "file-ending")]
         public string FileEnding { get; set; }

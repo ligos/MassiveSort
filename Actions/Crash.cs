@@ -25,6 +25,7 @@ using CommandLine;
 
 namespace MurrayGrant.MassiveSort.Actions
 {
+    [Verb("crash")]
     public sealed class CrashConf : CommonConf
     {
         [Option('f', "from")]
