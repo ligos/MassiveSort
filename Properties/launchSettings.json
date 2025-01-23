@@ -2,7 +2,7 @@
   "profiles": {
     "MassiveSort": {
       "commandName": "Project",
-      "commandLineArgs": "crash "
+      "commandLineArgs": "help cleantemp"
     }
   }
 }

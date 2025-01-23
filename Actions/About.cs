@@ -25,13 +25,10 @@ using CommandLine;
 
 namespace MurrayGrant.MassiveSort.Actions
 {
-    [Verb("about", aliases: ["help"])]
+    [Verb("about")]
     public sealed class AboutConf : CommonConf
     {
-        public static string GetUsageText()
-        {
-            return Conf.FirstUsageLineText;
-        }
+        public static string GetUsageText() => "There are no options for 'about' verb.";
     }
 
     public class About : ICmdVerb

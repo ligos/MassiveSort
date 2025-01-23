@@ -38,11 +38,14 @@ namespace MurrayGrant.MassiveSort.Actions
 
         public static string GetUsageText()
         {
-            return Conf.FirstUsageLineText + @"
+            return
+"""
+Help for 'crash' verb:
+
 -f --from    Where to throw the exception from.
               - Throw: Simple throw statement on main thead (default).
               - Task: Thrown from within Task object.
-";
+""";
         }
     }
 

@@ -66,7 +66,10 @@ namespace MurrayGrant.MassiveSort.Actions
 
         public static string GetUsageText()
         {
-            return Conf.FirstUsageLineText + @"
+            return 
+"""
+Help for 'merge" verb:
+
     Required Inputs / Outputs
 -i --input    One or more files or folders to sort
 -o --output   A file to write the output to
@@ -134,7 +137,7 @@ namespace MurrayGrant.MassiveSort.Actions
                    Default: 2, major contributor to memory usage
 --aggressive-memory-collection 
                    Does a full garbage collection after each file processed
-";
+""";
         }
 
         [Option('i', "input")]

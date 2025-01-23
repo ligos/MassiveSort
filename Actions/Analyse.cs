@@ -51,7 +51,12 @@ namespace MurrayGrant.MassiveSort.Actions
 
         public static string GetUsageText()
         {
-            return "";
+            return
+"""
+Help for 'analyse' verb:
+
+TODO
+""";
         }
 
 

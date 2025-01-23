@@ -33,40 +33,6 @@ namespace MurrayGrant.MassiveSort
         void Do(CancellationToken token);
     }
 
-    public class Conf
-    {
-        public Conf()
-        {
-        }
-
-        //public bool HelpWasRequested 
-        //{ 
-        //    get {
-        //        return (this.MergeOptions != null && this.MergeOptions.Help)
-        //            || (this.CleanTempOptions != null && this.CleanTempOptions.Help);
-        //    } 
-        //}
-
-        //[HelpVerbOption()]
-        public string GetUsage(string verb)
-        {
-            // Without this, the command line parser throws a null ref exception.
-            return "";
-        }
-        public static readonly string FirstUsageLineText = "  Usage: MassiveSort <verb> <arguments> [options]\n";
-        public static string GetUsageText()
-        {
-            return FirstUsageLineText + String.Format(@"
-merge        Merges and sorts one or more files to a new copy
-cleanTemp    Cleans unused files from temporary folders                    
-help         Gets help on a verb, or shows this list                    
-
-Additional information can be found at {0}
-", Actions.About.ProjectUrl);
-        }
-        
-    }
-
     public abstract class CommonConf
     {
         [Option('?', "help")]

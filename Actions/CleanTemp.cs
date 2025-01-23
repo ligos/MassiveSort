@@ -33,10 +33,13 @@ namespace MurrayGrant.MassiveSort.Actions
 
         public static string GetUsageText()
         {
-            return Conf.FirstUsageLineText + @"
+            return
+"""
+Help for 'mergetemp' verb:
+
 -t --temp-folder    Folder to search for temporary files. 
                     Default: %TEMP%\MassiveSort  
-";
+""";
         }
     }
 

@@ -40,7 +40,7 @@ namespace MurrayGrant.MassiveSort
 
                 //var conf = new Conf();
                 bool helpRequested = false;
-                Type[] verbTypes = [typeof(AboutConf), typeof(AnalyseConf), typeof(CleanTempConf), typeof(CrashConf), typeof(MergeConf)];
+                Type[] verbTypes = [typeof(HelpConf), typeof(AboutConf), typeof(AnalyseConf), typeof(CleanTempConf), typeof(CrashConf), typeof(MergeConf)];
                 var parser = new CommandLine.Parser(settings =>
                 {
                     settings.HelpWriter = null;
@@ -70,29 +70,16 @@ namespace MurrayGrant.MassiveSort
 
                 if (parseResult.Value is MergeConf mc)
                     action = new MergeMany(mc.ExtraParsing());
-                //else if (!parseSucceeded && verb == "merge")
-                //    usageText = MergeConf.GetUsageText();
                 else if (parseResult.Value is AnalyseConf ac)
                     action = new Analyse(ac.ExtraParsing());
-                //else if (!parseSucceeded && parseResult.Value is AnalyseConf)
-                //    usageText = AnalyseConf.GetUsageText();
                 else if (parseResult.Value is CrashConf cc)
                     action = new Crash(cc);
-                //else if (!parseSucceeded && parseResult.Value is CrashConf)
-                //    usageText = CrashConf.GetUsageText();
                 else if (parseResult.Value is CleanTempConf ctc)
                     action = new CleanTemp(ctc);
-                //else if (!parseSucceeded && parseResult.Value is CleanTempConf)
-                //    usageText = CleanTempConf.GetUsageText();
                 else if (parseResult.Value is AboutConf)
                     action = new About();
-                //else if (verb == "help" && args.Length == 1)
-                //{
-                //    errorText = "Here's some help:";
-                //    usageText = Conf.GetUsageText();
-                //} else if (verb == "help" && args.Length == 2) {
-                //    errorText = "";
-                //    usageText = GetHelpMessageForVerb(args[1]);
+                else if (parseResult.Value is HelpConf hc)
+                    action = new Help(hc);
                 //} else if (!parseSucceeded && String.IsNullOrEmpty(verbSelected)) {
                 //    errorText = "Error: You must select a verb.";
                 //    usageText = Conf.GetUsageText();
@@ -191,25 +178,5 @@ namespace MurrayGrant.MassiveSort
             e.Cancel = true;
             Console.WriteLine("CTRL+C received: cancelling run...");
         }
-
-        private static string GetHelpMessageForVerb(string v)
-        {
-            var verb = (v ?? "").ToLower();
-            switch (verb)
-            {
-                case "merge":
-                    return MergeConf.GetUsageText();
-                case "cleantemp":
-                    return CleanTempConf.GetUsageText();
-                case "analyse":
-                case "analyze":
-                    return AnalyseConf.GetUsageText();
-                case "crash":
-                    return CrashConf.GetUsageText();
-                default:
-                    return "Unknown verb: " + v + "\n" + Conf.GetUsageText();
-            }
-        }
-
     }
 }
