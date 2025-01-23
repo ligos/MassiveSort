@@ -74,6 +74,11 @@ Help for 'crash' verb:
 
         public void Do(CancellationToken token)
         {
+            if (_Conf.Help) {
+                new Help(new HelpConf() { Verb = "crash" }).Do(token);
+                return;
+            }
+
             // All this does is throw an exception for testing purposes.
 
             if (_Conf.From == CrashConf.ExceptionFrom.Throw)

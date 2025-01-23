@@ -57,7 +57,9 @@ namespace MurrayGrant.MassiveSort.Actions
                     crash        Tests handling an unexpected error
                     about        Shows copyright and version information
                     help         Gets help on a verb, or shows this list
-            
+
+                    All verbs have a --help option, or use 'help <verb>' to get further help.
+
                     """
                 );
                 Console.WriteLine($"Additional information can be found at {About.ProjectUrl}");

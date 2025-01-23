@@ -69,6 +69,11 @@ Help for 'mergetemp' verb:
 
         public void Do(CancellationToken token)
         {
+            if (_Conf.Help) {
+                new Help(new HelpConf() { Verb = "cleantemp" }).Do(token);
+                return;
+            }
+
             // Check the default temp folder.
             var defaultTempSize = 0L;
             var defaultTemp = Helpers.GetBaseTempFolder();

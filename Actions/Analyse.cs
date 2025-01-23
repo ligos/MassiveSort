@@ -154,8 +154,12 @@ TODO
 
         public void Do(CancellationToken token)
         {
-            this._CancelToken = token;
+            if (_Conf.Help) {
+                new Help(new HelpConf() { Verb = "analyse" }).Do(token);
+                return;
+            }
 
+            this._CancelToken = token;
             PrintConf();        // Print the config settings, in debug mode.
 
             var filesToProcess = this.GatherFiles();

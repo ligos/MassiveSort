@@ -51,15 +51,6 @@ namespace MurrayGrant.MassiveSort
                 var parseResult = parser.ParseArguments(args, verbTypes);
                 var parseSucceeded = parseResult.Tag == ParserResultType.Parsed;
 
-                //,  conf, (v, o) =>
-                //{
-                //    verbSelected = v ?? "";
-                //    if (String.Equals(verbSelected, "help", StringComparison.CurrentCultureIgnoreCase))
-                //        helpRequested = true;
-                //    else if (conf != null)
-                //        helpRequested = conf.HelpWasRequested;
-                //});
-
 
                 // Based on command line verb, determine what we will do.
                 ICmdVerb action = null;

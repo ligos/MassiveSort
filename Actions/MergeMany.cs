@@ -436,6 +436,11 @@ Help for 'merge" verb:
 
         public void Do(CancellationToken token)
         {
+            if (_Conf.Help) {
+                new Help(new HelpConf() { Verb = "merge" }).Do(token);
+                return;
+            }
+
             this._CancelToken = token;
 
             PrintConf();        // Print the config settings, in debug mode.
