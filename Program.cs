@@ -46,6 +46,7 @@ namespace MurrayGrant.MassiveSort
                     settings.HelpWriter = null;
                     settings.AutoHelp = false;
                     settings.AutoVersion = false;
+                    settings.CaseInsensitiveEnumValues = true;
                 });
                 var parseResult = parser.ParseArguments(args, verbTypes);
                 var parseSucceeded = parseResult.Tag == ParserResultType.Parsed;

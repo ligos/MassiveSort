@@ -2,7 +2,7 @@
   "profiles": {
     "MassiveSort": {
       "commandName": "Project",
-      "commandLineArgs": "about"
+      "commandLineArgs": "crash "
     }
   }
 }
