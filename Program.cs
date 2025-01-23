@@ -24,6 +24,7 @@ using System.Diagnostics;
 
 using MurrayGrant.MassiveSort.Actions;
 using CommandLine;
+using CommandLine.Text;
 
 namespace MurrayGrant.MassiveSort
 {
@@ -39,7 +40,6 @@ namespace MurrayGrant.MassiveSort
                 Console.WriteLine();
 
                 //var conf = new Conf();
-                bool helpRequested = false;
                 Type[] verbTypes = [typeof(HelpConf), typeof(AboutConf), typeof(AnalyseConf), typeof(CleanTempConf), typeof(CrashConf), typeof(MergeConf)];
                 var parser = new CommandLine.Parser(settings =>
                 {
@@ -49,15 +49,11 @@ namespace MurrayGrant.MassiveSort
                     settings.CaseInsensitiveEnumValues = true;
                 });
                 var parseResult = parser.ParseArguments(args, verbTypes);
-                var parseSucceeded = parseResult.Tag == ParserResultType.Parsed;
 
 
                 // Based on command line verb, determine what we will do.
                 ICmdVerb action = null;
-                string usageText = null;
                 string errorText = null;
-                if (!parseSucceeded)
-                    errorText = "Error: Unable to parse arguments.";
 
                 if (parseResult.Value is MergeConf mc)
                     action = new MergeMany(mc.ExtraParsing());
@@ -71,33 +67,37 @@ namespace MurrayGrant.MassiveSort
                     action = new About();
                 else if (parseResult.Value is HelpConf hc)
                     action = new Help(hc);
-                //} else if (!parseSucceeded && String.IsNullOrEmpty(verbSelected)) {
-                //    errorText = "Error: You must select a verb.";
-                //    usageText = Conf.GetUsageText();
-                //} else if (!parseSucceeded) {
-                //    errorText = "Error: Unknown verb - " + verbSelected;
-                //    usageText = Conf.GetUsageText();
-
-                //} else if (parseSucceeded)
-                //    throw new Exception("Unknown verb: " + verbSelected);
+                else if (parseResult.Tag == ParserResultType.NotParsed && args.Length == 0)
+                    errorText = "Error: You must select a verb.";
+                else if (parseResult.Tag == ParserResultType.NotParsed)
+                    errorText = "Error: unable to parse command.\r\n" 
+                              + HelpText.RenderParsingErrorsText(parseResult, GetNiceishErrorMessage, es => string.Join(",", es.Select(GetNiceishErrorMessage)), 1);
                 else
                     throw new Exception("Unexpected state.");
 
+                static string GetNiceishErrorMessage(Error e)
+                    => e switch
+                    {
+                        TokenError te => te.Tag + ": " + te.Token,
+                        NamedError ne => ne.Tag + ": " + ne.NameInfo.NameText + "(" + ne.NameInfo.LongName + ")",
+                        _ => e.Tag.ToString()
+                    };
 
-                // Check all is OK.
-                if (parseSucceeded && action != null && !action.IsValid())
-                {
+                // If we parsed, check the action is valid.
+                if (action != null && !action.IsValid())
                     errorText = "Error: " + action.GetValidationError();
-                    usageText = action.GetUsageMessage();
-                }
 
-                if (!parseSucceeded || !String.IsNullOrEmpty(errorText) || helpRequested)
+                if (!String.IsNullOrEmpty(errorText))
                 {
                     // Failure case.
                     Console.WriteLine();
-                    if (!helpRequested)
-                        Console.WriteLine(errorText);
-                    Console.WriteLine(usageText);
+                    Console.WriteLine(errorText);
+                    Console.WriteLine();
+                    if (args.Length == 0 || parseResult.Errors.Any(e => e.Tag == ErrorType.NoVerbSelectedError || e.Tag == ErrorType.BadVerbSelectedError))
+                        // Special case: errors about verbs get generic usage text!
+                        new Help(new HelpConf()).Do(CancellationToken.None);
+                    else
+                        Console.WriteLine("Use 'help <verb>' to get more information.");
 
                     if (Environment.UserInteractive && Debugger.IsAttached)
                     {
