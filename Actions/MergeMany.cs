@@ -141,7 +141,7 @@ Help for 'merge" verb:
         }
 
         [Option('i', "input")]
-        public IEnumerable<string> Inputs { get; set; } = [];
+        public IEnumerable<string> Inputs { get; set; }
 
 
         [Option('o', "output")]
@@ -281,8 +281,8 @@ Help for 'merge" verb:
         /// https://en.wikipedia.org/wiki/Whitespace_character
         /// </summary>
         [Option("whitespace-chars")]
-        public IEnumerable<byte> WhitespaceChars { get; set; } = [];
-        public byte[] WhitespaceCharsAsBytes { get; set; }
+        public IEnumerable<byte> WhitespaceChars { get; set; }
+        internal byte[] WhitespaceCharsAsBytes { get; set; }
 
         /// <summary>
         /// If true, will convert all lines outside printable ASCII range to the $HEX[...] format. False by default.
