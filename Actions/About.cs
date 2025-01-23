@@ -42,11 +42,6 @@ namespace MurrayGrant.MassiveSort.Actions
         {
         }
 
-        public string GetUsageMessage()
-        {
-            return CleanTempConf.GetUsageText();
-        }
-
         public bool IsValid()
         {
             return true;

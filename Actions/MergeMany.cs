@@ -141,7 +141,7 @@ Help for 'merge" verb:
         }
 
         [Option('i', "input")]
-        public IEnumerable<string> Inputs { get; set; }
+        public IEnumerable<string> Inputs { get; set; } = [];
 
 
         [Option('o', "output")]
@@ -281,7 +281,8 @@ Help for 'merge" verb:
         /// https://en.wikipedia.org/wiki/Whitespace_character
         /// </summary>
         [Option("whitespace-chars")]
-        public byte[] WhitespaceChars { get; set; }
+        public IEnumerable<byte> WhitespaceChars { get; set; } = [];
+        public byte[] WhitespaceCharsAsBytes { get; set; }
 
         /// <summary>
         /// If true, will convert all lines outside printable ASCII range to the $HEX[...] format. False by default.
@@ -322,6 +323,8 @@ Help for 'merge" verb:
                 LargeFileThresholdSize = (int)size;
             if (!String.IsNullOrEmpty(this.LargeFileChunkSize_Raw) && Helpers.TryParseByteSized(this.LargeFileChunkSize_Raw, out size))
                 LargeFileChunkSize = (int)size;
+
+            WhitespaceCharsAsBytes = WhitespaceChars.ToArray();
 
             return this;
         }
@@ -406,11 +409,6 @@ Help for 'merge" verb:
         public MergeMany(MergeConf conf)
         {
             _Conf = conf;
-        }
-
-        public string GetUsageMessage()
-        {
-            return MergeConf.GetUsageText();
         }
 
         public void Dispose()
@@ -727,14 +725,14 @@ Help for 'merge" verb:
                 // Trimming whitespace does not require a change to the buffer or any copying.
                 if (trimWhitespace)
                 {
-                    var maybeChanged = this.TrimWhitespace(toWrite, _Conf.WhitespaceChars);
+                    var maybeChanged = this.TrimWhitespace(toWrite, _Conf.WhitespaceCharsAsBytes);
                     if (toWrite != maybeChanged) linesTrimmed++;
                     toWrite = maybeChanged;
                 }
                 // Stripping all whitespace may require a copy to the alternate buffer.
                 if (stripWhitespace)
                 {
-                    var maybeChanged = this.StripWhitespace(toWrite, extraBuffer, _Conf.WhitespaceChars);
+                    var maybeChanged = this.StripWhitespace(toWrite, extraBuffer, _Conf.WhitespaceCharsAsBytes);
                     if (toWrite != maybeChanged) linesStripped++;
                     toWrite = maybeChanged;
                 }

@@ -135,11 +135,6 @@ TODO
             _Conf = conf;
         }
 
-        public string GetUsageMessage()
-        {
-            return MergeConf.GetUsageText();
-        }
-
         public void Dispose()
         {
         }

@@ -53,11 +53,6 @@ Help for 'mergetemp' verb:
             _Conf = conf;
         }
 
-        public string GetUsageMessage()
-        {
-            return CleanTempConf.GetUsageText();
-        }
-
         public bool IsValid()
         {
             return true;

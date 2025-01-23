@@ -58,11 +58,6 @@ Help for 'crash' verb:
             _Conf = conf;
         }
 
-        public string GetUsageMessage()
-        {
-            return CrashConf.GetUsageText();
-        }
-
         public bool IsValid()
         {
             return true;

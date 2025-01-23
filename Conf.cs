@@ -28,7 +28,6 @@ namespace MurrayGrant.MassiveSort
     {
         bool IsValid();
         string GetValidationError();
-        string GetUsageMessage();
 
         void Do(CancellationToken token);
     }
