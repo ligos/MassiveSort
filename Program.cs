@@ -39,11 +39,16 @@ namespace MurrayGrant.MassiveSort
                 Console.WriteLine();
 
                 //var conf = new Conf();
-                var verbSelected = "";
                 bool helpRequested = false;
                 Type[] verbTypes = [typeof(AboutConf), typeof(AnalyseConf), typeof(CleanTempConf), typeof(CrashConf), typeof(MergeConf)];
-                var parseResult = CommandLine.Parser.Default.ParseArguments(args, verbTypes);
-                var parseSucceeded = parseResult.Value.GetType() != typeof(NullInstance);
+                var parser = new CommandLine.Parser(settings =>
+                {
+                    settings.HelpWriter = null;
+                    settings.AutoHelp = false;
+                    settings.AutoVersion = false;
+                });
+                var parseResult = parser.ParseArguments(args, verbTypes);
+                var parseSucceeded = parseResult.Tag == ParserResultType.Parsed;
 
                 //,  conf, (v, o) =>
                 //{
@@ -62,41 +67,40 @@ namespace MurrayGrant.MassiveSort
                 if (!parseSucceeded)
                     errorText = "Error: Unable to parse arguments.";
 
-                var verb = verbSelected.ToLower();
-                if (parseSucceeded && parseResult.Value is MergeConf mc)
+                if (parseResult.Value is MergeConf mc)
                     action = new MergeMany(mc.ExtraParsing());
-                else if (!parseSucceeded && verb == "merge")
-                    usageText = MergeConf.GetUsageText();
-                else if (parseSucceeded && parseResult.Value is AnalyseConf ac)
+                //else if (!parseSucceeded && verb == "merge")
+                //    usageText = MergeConf.GetUsageText();
+                else if (parseResult.Value is AnalyseConf ac)
                     action = new Analyse(ac.ExtraParsing());
-                else if (!parseSucceeded && parseResult.Value is AnalyseConf)
-                    usageText = AnalyseConf.GetUsageText();
-                else if (parseSucceeded && parseResult.Value is CrashConf cc)
+                //else if (!parseSucceeded && parseResult.Value is AnalyseConf)
+                //    usageText = AnalyseConf.GetUsageText();
+                else if (parseResult.Value is CrashConf cc)
                     action = new Crash(cc);
-                else if (!parseSucceeded && parseResult.Value is CrashConf)
-                    usageText = CrashConf.GetUsageText();
-                else if (parseSucceeded && parseResult.Value is CleanTempConf ctc)
+                //else if (!parseSucceeded && parseResult.Value is CrashConf)
+                //    usageText = CrashConf.GetUsageText();
+                else if (parseResult.Value is CleanTempConf ctc)
                     action = new CleanTemp(ctc);
-                else if (!parseSucceeded && parseResult.Value is CleanTempConf)
-                    usageText = CleanTempConf.GetUsageText();
-                else if (verb == "about")
+                //else if (!parseSucceeded && parseResult.Value is CleanTempConf)
+                //    usageText = CleanTempConf.GetUsageText();
+                else if (parseResult.Value is AboutConf)
                     action = new About();
-                else if (verb == "help" && args.Length == 1)
-                {
-                    errorText = "Here's some help:";
-                    usageText = Conf.GetUsageText();
-                } else if (verb == "help" && args.Length == 2) {
-                    errorText = "";
-                    usageText = GetHelpMessageForVerb(args[1]);
-                } else if (!parseSucceeded && String.IsNullOrEmpty(verbSelected)) {
-                    errorText = "Error: You must select a verb.";
-                    usageText = Conf.GetUsageText();
-                } else if (!parseSucceeded) {
-                    errorText = "Error: Unknown verb - " + verbSelected;
-                    usageText = Conf.GetUsageText();
+                //else if (verb == "help" && args.Length == 1)
+                //{
+                //    errorText = "Here's some help:";
+                //    usageText = Conf.GetUsageText();
+                //} else if (verb == "help" && args.Length == 2) {
+                //    errorText = "";
+                //    usageText = GetHelpMessageForVerb(args[1]);
+                //} else if (!parseSucceeded && String.IsNullOrEmpty(verbSelected)) {
+                //    errorText = "Error: You must select a verb.";
+                //    usageText = Conf.GetUsageText();
+                //} else if (!parseSucceeded) {
+                //    errorText = "Error: Unknown verb - " + verbSelected;
+                //    usageText = Conf.GetUsageText();
 
-                } else if (parseSucceeded)
-                    throw new Exception("Unknown verb: " + verbSelected);
+                //} else if (parseSucceeded)
+                //    throw new Exception("Unknown verb: " + verbSelected);
                 else
                     throw new Exception("Unexpected state.");
 

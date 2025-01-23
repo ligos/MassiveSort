@@ -25,7 +25,7 @@ using CommandLine;
 
 namespace MurrayGrant.MassiveSort.Actions
 {
-    [Verb("about")]
+    [Verb("about", aliases: ["help"])]
     public sealed class AboutConf : CommonConf
     {
         public static string GetUsageText()
@@ -66,6 +66,7 @@ namespace MurrayGrant.MassiveSort.Actions
             Console.WriteLine("About " + ProductName);
             Console.WriteLine(Copyright);
             Console.WriteLine(ProjectUrl);
+            Console.WriteLine("Version: " + Version);
             Console.WriteLine("Available under terms of Apache License (see LICENSE.txt)");
             Console.WriteLine();
             Console.WriteLine("Third Part Library Credits:");
