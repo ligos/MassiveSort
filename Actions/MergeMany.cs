@@ -978,20 +978,20 @@ Help for 'merge" verb:
                 // PERF: can read and sort each chunk in parallel, but must write at the end in the correct sequence.
                 schedulerOverheadTime = 
                     this.SortAndWriteChunks(sortChunks, 
-                    (ch, chNum) => {
+                    (c) => {
                         if (_CancelToken.IsCancellationRequested) return null;
 
                         var taskKey = new Object();
-                        this.WriteStats("Chunk #{0}: starting parallel sort thread.", chNum);
+                        this.WriteStats("Chunk #{0}: Starting parallel sort thread.", c.chunkNum);
 
-                        _Progress.Report(new TaskProgress(String.Format("Sorting chunk {0:N0} ({1} - {2})...", chNum, ch.First().Name, ch.Last().Name), false, taskKey));
-                        this.WriteStats("Sorting chunk {0:N0} with {3:N0} files ({1} - {2}: {4:N1}MB, {5:N0} lines)...", chNum, ch.First().Name, ch.Last().Name, ch.Count(), ch.Sum(x => x.Length) / oneMbAsDouble, ch.Sum(x => x.Lines));
+                        _Progress.Report(new TaskProgress(String.Format("Sorting chunk {0:N0} ({1} - {2})...", c.chunkNum, c.files.First().Name, c.files.Last().Name), false, taskKey));
+                        this.WriteStats("  Chunk #{0}: Sorting with {3:N0} files ({1} - {2}: {4:N1}MB, {5:N0} lines)...", c.chunkNum, c.files.First().Name, c.files.Last().Name, c.files.Count(), c.files.Sum(x => x.Length) / oneMbAsDouble, c.files.Sum(x => x.Lines));
 
                         // Read the files for the chunk into a single array for sorting.
                         // PERF: this represents ~5% of the time in this loop.
                         var readSw = Stopwatch.StartNew();
-                        var chunkData = this.ReadFilesForSorting(ch);           // This allocates a large byte[].
-                        var offsets = this.FindLineBoundariesForSorting(chunkData, ch);     // PERF: this is ~8%. This allocates a large Int64[].
+                        var chunkData = this.ReadFilesForSorting(c.chunkNum, c.files);           // This allocates a large byte[].
+                        var offsets = this.FindLineBoundariesForSorting(c.chunkNum, chunkData, c.files);     // PERF: this is ~8%. This allocates a large Int64[].
                         var linesRead = offsets.Length;
                         readSw.Stop();
                         if (_CancelToken.IsCancellationRequested) return null;
@@ -1001,25 +1001,25 @@ Help for 'merge" verb:
                         // PERF: it's not entirely obvious from the trace, but a significant part of that time is in the comparer.
                         var sortSw = Stopwatch.StartNew();
                         var comparer = this.GetOffsetComparer(chunkData);
-                        offsets = this.SortLines(chunkData, offsets, comparer);
+                        offsets = this.SortLines(c.chunkNum, chunkData, offsets, comparer);
                         sortSw.Stop();
                         if (_CancelToken.IsCancellationRequested) return null;
 
                         // Filter the sorted data to exclude duplicates.
                         // PERF: this represents ~10% of the time in this loop.
                         var deDupeSw = Stopwatch.StartNew();
-                        var deDupTuple = this.DeDupe(chunkData, offsets, (IEqualityComparer<OffsetAndLength>)comparer);
-                        var data = new IndexedFileData(chunkData, deDupTuple.Item1);
-                        var duplicates = new IndexedFileData(chunkData, deDupTuple.Item2);
+                        var deDupTuple = this.DeDupe(c.chunkNum, chunkData, offsets, (IEqualityComparer<OffsetAndLength>)comparer);
+                        var data = new IndexedFileData(chunkData, deDupTuple.uniques);
+                        var duplicates = new IndexedFileData(chunkData, deDupTuple.duplicates);
                         deDupeSw.Stop();
 
                         _Progress.Report(new TaskProgress(" Sorted. ", false, taskKey));
-                        this.WriteStats("Chunk #{0}: ending parallel sort thread.", chNum);
+                        this.WriteStats("  Chunk #{0}: Ending parallel sort thread.", c.chunkNum);
 
                         return new
                         {
-                            ch,
-                            chNum,
+                            ch = c.chunkNum,
+                            chNum = c.chunkNum,
                             linesRead,
                             data,
                             duplicates,
@@ -1031,7 +1031,7 @@ Help for 'merge" verb:
                     }, 
                     ch => {
                         if (_CancelToken.IsCancellationRequested) return;
-                        this.WriteStats("Chunk #{0}: on sequential write thread.", ch.chNum);
+                        this.WriteStats("Chunk #{0}: On sequential write thread.", ch.chNum);
 
                         // Remove duplicates and write to disk.
                         // PERF: this represents ~10% of the time in this loop. It cannot be parallelised.
@@ -1041,16 +1041,18 @@ Help for 'merge" verb:
                         totalLinesRead += ch.linesRead;
                         writeSw.Stop();
 
-                        _Progress.Report(new TaskProgress(" Written.", true, ch.taskKey));
-                        var chTime = ch.readTime + ch.sortTime + ch.deDupTime + writeSw.Elapsed;
-                        this.WriteStats("Chunk #{0}: processed in {1:N2} sec. Read {2:N0} lines in {3:N1}ms, sorted in {4:N1}ms, {7:N0} duplicates removed in {8:N1}ms, wrote {5:N0} lines in {6:N1}ms.", ch.chNum, chTime.TotalSeconds, ch.linesRead, ch.readTime.TotalMilliseconds, ch.sortTime.TotalMilliseconds, linesWritten, writeSw.Elapsed.TotalMilliseconds, ch.linesRead - linesWritten, ch.deDupTime.TotalMilliseconds);
-
                         // Release references to the large arrays allocated when reading files.
+                        var memoryCleanSw = Stopwatch.StartNew();
                         ch.data.Dispose();
                         if (ch.duplicates != null)
                             ch.duplicates.Dispose();
                         if (_Conf.AggressiveMemoryCollection)
                             GC.Collect();
+                        memoryCleanSw.Stop();
+
+                        _Progress.Report(new TaskProgress(" Written.", true, ch.taskKey));
+                        var chTime = ch.readTime + ch.sortTime + ch.deDupTime + writeSw.Elapsed + memoryCleanSw.Elapsed;
+                        this.WriteStats($"Chunk #{ch.chNum} completed! Processed in {chTime.TotalSeconds:N2} sec. Read {ch.linesRead:N0} lines in {ch.readTime.TotalMilliseconds:N1}ms, sorted in {ch.sortTime.TotalMilliseconds:N1}ms, {ch.linesRead - linesWritten:N0} duplicates removed in {ch.deDupTime.TotalMilliseconds:N1}ms, wrote {linesWritten:N0} lines in {writeSw.Elapsed.TotalMilliseconds:N1}ms, memory clean up in {memoryCleanSw.Elapsed.TotalMilliseconds:N1}ms.");
                     }
                 ).Result;
 
@@ -1080,7 +1082,7 @@ Help for 'merge" verb:
             this.WriteStats("Sort task scheduling overhead {0:N1}ms. {1:P1} of total sort time.", schedulerOverheadTime.TotalMilliseconds, schedulerOverheadTime.TotalSeconds / allSw.Elapsed.TotalSeconds);
         }
 
-        private async Task<TimeSpan> SortAndWriteChunks<T>(IList<IEnumerable<FileResult>> chunks, Func<IEnumerable<FileResult>, int, T> sorter, Action<T> writer)
+        private async Task<TimeSpan> SortAndWriteChunks<T>(IList<IEnumerable<FileResult>> chunks, Func<(int chunkNum, IEnumerable<FileResult> files), T> sorter, Action<T> writer)
         {
             // PLINQ works in most circumstances, but sometimes buffers output (even when asked not to)
             // which means it can deadlock. So we use our own scheduler logic with raw tasks.
@@ -1155,7 +1157,7 @@ Help for 'merge" verb:
                         var ch = chunks[sortChunkIdx];
                         var chNum = sortChunkIdx + 1;
                         sortChunkNums[i] = chNum;
-                        sortTasks[i] = new Task<T>(() => sorter(ch, chNum));
+                        sortTasks[i] = new Task<T>(() => sorter((chNum, ch)));
                         sortTasks[i].Start();            // These are started as soon as they are available.
                         sortChunkIdx++;
                     }
@@ -1219,7 +1221,7 @@ Help for 'merge" verb:
             }
         }
 
-        private byte[] ReadFilesForSorting(IEnumerable<FileResult> fs)
+        private byte[] ReadFilesForSorting(int chunkNum, IEnumerable<FileResult> fs)
         {
             // Read each file in one hit.
             // PERF: this could be done in parallel, but is unlikely to help as this is IO dominated and doing a sequential read anyway.
@@ -1239,10 +1241,10 @@ Help for 'merge" verb:
                 }
             }
             sw.Stop();
-            this.WriteStats("Read {0:N0} file(s) {1:N1}MB in {2:N1}ms.", fs.Count(), fs.Sum(x => x.Length) / oneMbAsDouble, sw.Elapsed.TotalMilliseconds);
+            this.WriteStats($"  Chunk #{chunkNum}: Read {fs.Count():N0} file(s) {fs.Sum(x => x.Length) / oneMbAsDouble:N1}MB in {sw.Elapsed.TotalMilliseconds:N1}ms.");
             return data;
         }
-        private OffsetAndLength[] FindLineBoundariesForSorting(byte[] data, IEnumerable<FileResult> fs)
+        private OffsetAndLength[] FindLineBoundariesForSorting(int chunkNum, byte[] data, IEnumerable<FileResult> fs)
         {
             // Create an index into the files based on new lines.
             // Because we've processed all incoming files, we know there will be a single new line character after each line.
@@ -1267,11 +1269,11 @@ Help for 'merge" verb:
                 }
             }
             sw.Stop();
-            this.WriteStats("Found {0:N0} lines in {1:N1}ms.", offsets.Length, sw.Elapsed.TotalMilliseconds);
+            this.WriteStats($"  Chunk #{chunkNum}: Found {offsets.Length:N0} lines in {sw.Elapsed.TotalMilliseconds:N1}ms.");
             return offsets;
         }
 
-        private OffsetAndLength[] SortLines(byte[] chunkData, OffsetAndLength[] offsets, IComparer<OffsetAndLength> comparer)
+        private OffsetAndLength[] SortLines(int chunkNum, byte[] chunkData, OffsetAndLength[] offsets, IComparer<OffsetAndLength> comparer)
         {
             var sw = Stopwatch.StartNew();
             if (_Conf.SortAlgorithm == MergeConf.SortAlgorithms.Auto || _Conf.SortAlgorithm == MergeConf.SortAlgorithms.DefaultArray)
@@ -1283,11 +1285,11 @@ Help for 'merge" verb:
             else
                 throw new Exception("Unknown sort algorithm: " + _Conf.SortAlgorithm);
             sw.Stop();
-            this.WriteStats("Sorted {0:N0} lines ({1:N1}MB) in {2:N1}ms.", offsets.Length, chunkData.Length / oneMbAsDouble, sw.Elapsed.TotalMilliseconds);
+            this.WriteStats($"  Chunk #{chunkNum}: Sorted {offsets.Length:N0} lines ({chunkData.Length / oneMbAsDouble:N1}MB) in {sw.Elapsed.TotalMilliseconds:N1}ms.");
             return offsets;
         }
 
-        private Tuple<OffsetAndLength[], OffsetAndLength[]> DeDupe(byte[] chunkData, OffsetAndLength[] offsets, IEqualityComparer<OffsetAndLength> comparer)
+        private (OffsetAndLength[] uniques, OffsetAndLength[] duplicates) DeDupe(int chunkNum, byte[] chunkData, OffsetAndLength[] offsets, IEqualityComparer<OffsetAndLength> comparer)
         {
             var sw = Stopwatch.StartNew();
 
@@ -1299,7 +1301,7 @@ Help for 'merge" verb:
 
             // Nothing needs to be done!
             if (leaveDuplicates && !saveDuplicates)
-                return Tuple.Create(offsets, (OffsetAndLength[])null);
+                return (offsets, null);
 
             var previous = OffsetAndLength.Empty;
             var lastDuplicate = OffsetAndLength.Empty;
@@ -1326,10 +1328,10 @@ Help for 'merge" verb:
                 previous = current;
             }
 
-            var result = Tuple.Create(uniques.ToArray(), dups == null ? null : dups.ToArray());
+            var result = (uniques.ToArray(), dups?.ToArray());
 
             sw.Stop();
-            this.WriteStats("De-duplicated {0:N0} lines(s), {1:N1}MB in {2:N1}ms. {3:N0} line(s) remain, {4:N0} duplicates removed.", offsets.Length, chunkData.Length / oneMbAsDouble, sw.Elapsed.TotalMilliseconds, uniques.Count, offsets.Length - uniques.Count);
+            this.WriteStats($"  Chunk #{chunkNum}: De-duplicated {offsets.Length:N0} lines(s), {chunkData.Length / oneMbAsDouble:N1}MB in {sw.Elapsed.TotalMilliseconds:N1}ms. {uniques.Count:N0} line(s) remain, {offsets.Length - uniques.Count:N0} duplicates removed.");
             return result;
         }
 
