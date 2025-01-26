@@ -24,6 +24,7 @@ using System.IO;
 using System.Diagnostics;
 using CommandLine;
 using MurrayGrant.MassiveSort.Readers;
+using System.Buffers;
 
 namespace MurrayGrant.MassiveSort.Actions
 {
@@ -52,6 +53,8 @@ namespace MurrayGrant.MassiveSort.Actions
             this.SortWorkers = Helpers.PhysicalCoreCount();
             this.IOWorkers = 8;                 // Default of 8 IO workers. Should provide a balance between SSD and HDD.
             this.MaxOutstandingSortedChunks = 2;
+            this.SplitCount = 16;
+            this.ForceLargeSort = false;
 
             this.LargeFileThresholdSize = 1 * 1024L * 1024L * 1024L;        // 1GB
             this.LargeFileChunkSize = 256 * 1024 * 1024;    // 256MB
@@ -105,6 +108,11 @@ Help for 'merge" verb:
                    - DefaultArray: Array.Sort()
                    - LinqOrderBy: Enumerable.OrderBy()
                    - TimSort: Timsort algorithm (default)
+--split-count      Number of split iterations.
+                   Default: 16
+--force-large-sort Force sorting shards larger than max-sort-size
+                   You must still have sufficent physical RAM
+                   Default: False
 
     Workers / Threads
 --split-workers    Number of worker threads when splitting files
@@ -256,6 +264,11 @@ Help for 'merge" verb:
             TimSort,
         }
 
+        [Option("split-count")]
+        public int SplitCount { get; set; }
+
+        [Option("force-large-sort")]
+        public bool ForceLargeSort { get; set; }
 
         [Option("whitespace")]
         public WhitespaceOptions Whitespace { get; set; }
@@ -354,6 +367,9 @@ Help for 'merge" verb:
             if (!String.IsNullOrEmpty(this.LargeFileChunkSize_Raw) && !Helpers.TryParseByteSized(this.LargeFileChunkSize_Raw, out size))
                 result.Append("'large-chunk' cannot be parsed.");
 
+            if (SplitCount < 1 || SplitCount > 128)
+                result.AppendLine("'shard-count' must be between 1 and 128.");
+
             // Other sanity checks.
             if (MaxSortSize < 1024 * 256)
                 result.AppendLine("'max-sort-size' must be at least 256KB.");
@@ -393,7 +409,7 @@ Help for 'merge" verb:
     }
     #endregion
 
-    public class MergeMany : ICmdVerb, IDisposable
+    public sealed class MergeMany : ICmdVerb, IDisposable
     {
         private readonly double oneMbAsDouble = Constants.OneMbAsDouble;
         private static string emptyShardFilename = "!";
@@ -414,7 +430,17 @@ Help for 'merge" verb:
         public void Dispose()
         {
             // Try to clean up our temp folder at the end.
-            CleanTempFolder();
+            try
+            {
+                CleanTempFolder();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine();
+                Console.WriteLine($"Unable to clean temp folder '{_Conf.TempFolder}' when stopping ({ex.GetType().Name}: {ex.Message}).");
+                Console.WriteLine("Use the 'cleantemp' verb to remove them.");
+                Console.WriteLine();
+            }
 
             if (this._StatsFile != null)
             {
@@ -513,6 +539,17 @@ Help for 'merge" verb:
                         .ToList().AsEnumerable();
             while (filesLargerThanSortSize.Any())
             {
+                if (shardSize > _Conf.SplitCount && _Conf.ForceLargeSort)
+                {
+                    _Progress.Report(new BasicProgress(String.Format("Splitting stopped. {0:N0} file(s) remain larger than {1}. Will attempt to sort in RAM.", filesLargerThanSortSize.Count(), _Conf.MaxSortSize.ToByteSizedString()), true));
+                    this.WriteStats("Splitting stopped. Following files remain larger than {0}:", _Conf.MaxSortSize.ToByteSizedString());
+                    foreach (var f in filesLargerThanSortSize)
+                        this.WriteStats("  {0}: {1}", f.Name, f.Length.ToByteSizedString(2));
+                    break;
+                }
+                else if (shardSize > _Conf.SplitCount && !_Conf.ForceLargeSort)
+                    throw new ApplicationException($"Splitting stopped after {shardSize-1} rounds and was unable to reduce all shards to less than {_Conf.MaxSortSize.ToByteSizedString()}. This indicates a large number of simiar or duplicate lines. Try increasing --split-count or --max-sort-size to process these files. Or enable --force-large-sort to try sorting anyway. You may need to decrease --sort-workers to avoid running out of memory.");
+
                 _Progress.Report(new BasicProgress(String.Format("Splitting {0:N0} file(s) (round {1})...", filesLargerThanSortSize.Count(), shardSize), true));
                 this.WriteStats("Splitting {0:N0} file(s) (round {1})...", filesLargerThanSortSize.Count(), shardSize);
 
@@ -1157,9 +1194,14 @@ Help for 'merge" verb:
                 cumulativeSize += fi.Length;
             }
             sortChunks.Add(chunk);
+            sortChunks.RemoveAll(x => !x.Any());  // Empty sort chunks might exist because some files are larger than MaxSortSize
             sw.Stop();
 
             this.WriteStats("Created {0:N0} x {1:N1}MB chunk(s) to sort in {2:N1}ms.", sortChunks.Count(), _Conf.MaxSortSize / oneMbAsDouble, sw.Elapsed.TotalMilliseconds);
+            var largeChunks = sortChunks.Where(x => x.Sum(f => f.Length) > _Conf.MaxSortSize);
+            foreach (var c in largeChunks)
+                this.WriteStats($"  Chunk '{c.First().Name}' is {c.Sum(f => f.Length).ToByteSizedString(2)} - larger than MaxSortSize ({_Conf.MaxSortSize.ToByteSizedString()})");
+
 
             return sortChunks;
         }
@@ -1182,6 +1224,8 @@ Help for 'merge" verb:
             // Read each file in one hit.
             // PERF: this could be done in parallel, but is unlikely to help as this is IO dominated and doing a sequential read anyway.
             var sw = Stopwatch.StartNew();
+            // TODO: replace this big allocation with something that can support Int64 bytes!
+            //MemoryPool<byte>.Shared.Rent()
             var data = new byte[(int)fs.Sum(x => x.Length)];
             {
                 int offset = 0;
@@ -1402,6 +1446,8 @@ Help for 'merge" verb:
                 Console.WriteLine("  Max Outstanding Chunks: " + _Conf.MaxOutstandingSortedChunks);
                 Console.WriteLine("  Sort By: " + _Conf.SortOrder);
                 Console.WriteLine("  Sort Algorithm: " + _Conf.SortAlgorithm);
+                Console.WriteLine("  Split Count: " + _Conf.SplitCount);
+                Console.WriteLine("  Force Large Sort: " + _Conf.ForceLargeSort);
                 Console.WriteLine("  Leave Duplicates: " + _Conf.LeaveDuplicates);
                 Console.WriteLine("  Save Stats: " + _Conf.SaveStats);
                 Console.WriteLine("  Whitespace: " + _Conf.Whitespace);
