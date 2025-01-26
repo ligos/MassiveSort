@@ -26,11 +26,13 @@ namespace MurrayGrant.MassiveSort
         private readonly Object _ProgressLock = new object();
         private readonly Dictionary<object, CursorPos> _TaskProgressToConsoleLine = new Dictionary<object, CursorPos>();
         private readonly Dictionary<object, string> _TaskProgressToBufferedLine = new Dictionary<object, string>();
+        private readonly bool _CanSetConsolePosition;
 
         public ConsoleProgressReporter()
         {
-
+            _CanSetConsolePosition = Environment.UserInteractive && !Console.IsOutputRedirected;
         }
+
         public void Report(BasicProgress value)
         {
             lock (_ProgressLock)
@@ -42,12 +44,19 @@ namespace MurrayGrant.MassiveSort
 
         private void ShowProgress(BasicProgress p)
         {
-            if (p.GetType() == typeof(TaskProgress))
+            if (p is TaskProgress tp)
             {
-                var tp = (TaskProgress)p;
-                var hasReachedEndOfBuffer = ((Console.WindowHeight + Console.WindowTop) >= (Console.BufferHeight - 1));
-                if (Environment.UserInteractive && !Console.IsOutputRedirected && !hasReachedEndOfBuffer)
+                if (_CanSetConsolePosition)
                 {
+                    // Note that Console windows properties might not be valid.
+                    var hasReachedEndOfBuffer = ((Console.WindowHeight + Console.WindowTop) >= (Console.BufferHeight - 1));
+                    if (hasReachedEndOfBuffer)
+                    {
+                        // Can't write to specific console lines, so buffer and write in one go.
+                        WriteAndBufferLine(tp);
+                        return;
+                    }
+
                     // If we're running interactive, we can print as soon as events arrive.
                     // Just need to write them in the right place!!
                     // Note that this does not work if you exceed the console buffer size; things end up out of place.
@@ -61,7 +70,7 @@ namespace MurrayGrant.MassiveSort
                         Console.CursorTop = pos.Top;
                         Console.CursorLeft = pos.Left;
                     }
-                    
+
                     // Write message.
                     Console.Write(tp.Message);
                     if (tp.IsFinal)
@@ -88,18 +97,7 @@ namespace MurrayGrant.MassiveSort
                 else
                 {
                     // Can't write to specific console lines, so buffer and write in one go.
-                    string line;
-                    if (!_TaskProgressToBufferedLine.TryGetValue(tp.TaskKey, out line))
-                        line = "";
-                    line += tp.Message;
-                    if (tp.IsFinal)
-                    {
-                        Console.WriteLine(line);
-                        // Remove the now completed task.
-                        _TaskProgressToConsoleLine.Remove(tp.TaskKey);
-                    }
-                    else
-                        _TaskProgressToBufferedLine[tp.TaskKey] = line;
+                    WriteAndBufferLine(tp);
                 }
             }
             else
@@ -109,6 +107,22 @@ namespace MurrayGrant.MassiveSort
                     Console.Write(p.Message);
                 else
                     Console.WriteLine(p.Message);
+            }
+
+            void WriteAndBufferLine(TaskProgress tp)
+            {
+                string line;
+                if (!_TaskProgressToBufferedLine.TryGetValue(tp.TaskKey, out line))
+                    line = "";
+                line += tp.Message;
+                if (tp.IsFinal)
+                {
+                    Console.WriteLine(line);
+                    // Remove the now completed task.
+                    _TaskProgressToConsoleLine.Remove(tp.TaskKey);
+                }
+                else
+                    _TaskProgressToBufferedLine[tp.TaskKey] = line;
             }
         }
 
