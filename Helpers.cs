@@ -19,6 +19,8 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using System.IO;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
 
 namespace MurrayGrant.MassiveSort
 {
@@ -252,6 +254,8 @@ namespace MurrayGrant.MassiveSort
         }
         private static int PhysicalCoreCount_Win32()
         {
+            Debug.Assert(RuntimeInformation.IsOSPlatform(OSPlatform.Windows));
+
             // http://stackoverflow.com/a/2670568
             int coreCount = 0;
             foreach (var item in new System.Management.ManagementObjectSearcher("Select NumberOfCores from Win32_Processor").Get())

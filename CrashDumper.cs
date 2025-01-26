@@ -21,6 +21,8 @@ using System.Reflection;
 using System.Management;
 using System.IO;
 using MurrayGrant.MassiveSort.Actions;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
 
 namespace MurrayGrant.MassiveSort
 {
@@ -128,19 +130,19 @@ namespace MurrayGrant.MassiveSort
             result.AppendFormat("TimestampLocal: {0:o} {1}", this.Timestamp.ToLocalTime(), Environment.NewLine);
             result.AppendFormat("Product: {0}{1}", this.Product, Environment.NewLine);
             result.AppendFormat("Version: {0}{1}", this.Version, Environment.NewLine);
-            result.AppendFormat("Environment: {0}{1}", Environment.OSVersion, Environment.NewLine);
             result.AppendLine();
             if (this.Exception != null)
             {
                 result.AppendFormat("EXCEPTION{0}{1}{0}", Environment.NewLine, this.Exception.ToFullString());
                 result.AppendLine();
             }
+            AddPlatformDetails(result);
             result.AppendLine(CreateComputerDetails());
             result.AppendLine();
             return result.ToString();
         }
 
-        public string CreateComputerDetails()
+        string CreateComputerDetails()
         {
             if (CrashDumper.IsWindowsLikeEnvironment())
                 return CreateWindowsComputerDetails();
@@ -151,8 +153,10 @@ namespace MurrayGrant.MassiveSort
         }
 
 
-        public string CreateWindowsComputerDetails()
+        string CreateWindowsComputerDetails()
         {
+            Debug.Assert(RuntimeInformation.IsOSPlatform(OSPlatform.Windows));
+
             var entryAssembly = Assembly.GetEntryAssembly();
             var result = new StringBuilder(4096);
             var drives = DriveInfo.GetDrives();
@@ -166,7 +170,6 @@ namespace MurrayGrant.MassiveSort
                 result.AppendLine("WINDOWS");
                 using (var item = computerSystem.Get().Cast<ManagementBaseObject>().First())
                     result.AppendFormat("Computer: {0} {1}{2}", item["Manufacturer"], item["Model"], Environment.NewLine);
-                result.AppendFormat("WindowsVersion: {0}{1}", Environment.OSVersion.VersionString, Environment.NewLine);
                 using (var item = osInfo.Get().Cast<ManagementBaseObject>().First())
                 {
                     result.AppendFormat("WindowsDetail: {0}{1}", item["Name"], Environment.NewLine);
@@ -179,11 +182,9 @@ namespace MurrayGrant.MassiveSort
                     result.AppendFormat("CountryCode: {0}{1}", item["CountryCode"], Environment.NewLine);
                     result.AppendFormat("Architecture: {0}{1}", item["OSArchitecture"], Environment.NewLine);
                 }
-                result.AppendFormat("NetFrameworkVersion: {0}{1}", Environment.Version, Environment.NewLine);
-                result.AppendFormat("MonoVersion: {0}{1}", GetMonoVersion(), Environment.NewLine);
                 result.AppendLine();
                 result.AppendLine("PROCESS");
-                result.AppendFormat("Exe: {0}{1}", entryAssembly.CodeBase, Environment.NewLine);
+                result.AppendFormat("Exe: {0}{1}", entryAssembly.Location, Environment.NewLine);
                 result.AppendFormat("Assembly: {0}{1}", entryAssembly.FullName, Environment.NewLine);
                 result.AppendFormat("Architecture: {0}{1}", Environment.Is64BitProcess ? "64 bit" : "32 bit", Environment.NewLine);
                 result.AppendFormat("WorkingSet: {0:N0}kB{1}", proc.WorkingSet64 / 1024, Environment.NewLine);
@@ -215,8 +216,14 @@ namespace MurrayGrant.MassiveSort
                 return result.ToString();
             }
         }
-        public string CreateUnixComputerDetails()
+        string CreateUnixComputerDetails()
         {
+            Debug.Assert(
+                RuntimeInformation.IsOSPlatform(OSPlatform.Linux)
+                || RuntimeInformation.IsOSPlatform(OSPlatform.OSX)
+                || RuntimeInformation.IsOSPlatform(OSPlatform.FreeBSD)
+            );
+
             // For Linux:
             // - /etc/*release - details of system / distro
             // - /prov/version - kernal version details
@@ -235,10 +242,6 @@ namespace MurrayGrant.MassiveSort
                     result.Append(File.ReadAllText(f));
                 }
                 result.AppendLine();
-                result.AppendLine("FRAMEWORK");
-                result.AppendFormat("NetFrameworkVersion: {0}{1}", Environment.Version, Environment.NewLine);
-                result.AppendFormat("MonoVersion: {0}{1}", GetMonoVersion(), Environment.NewLine);
-                result.AppendLine();
                 if (File.Exists("/proc/version"))
                 {
                     result.AppendLine("KERNAL");
@@ -246,7 +249,7 @@ namespace MurrayGrant.MassiveSort
                     result.AppendLine();
                 }
                 result.AppendLine("PROCESS");
-                result.AppendFormat("Exe: {0}{1}", entryAssembly.CodeBase, Environment.NewLine);
+                result.AppendFormat("Exe: {0}{1}", entryAssembly.Location, Environment.NewLine);
                 result.AppendFormat("Assembly: {0}{1}", entryAssembly.FullName, Environment.NewLine);
                 result.AppendFormat("Architecture: {0}{1}", Environment.Is64BitProcess ? "64 bit" : "32 bit", Environment.NewLine);
                 result.AppendFormat("WorkingSet: {0:N0}kB{1}", proc.WorkingSet64 / 1024, Environment.NewLine);
@@ -282,14 +285,18 @@ namespace MurrayGrant.MassiveSort
             }
         }
 
-        private string GetMonoVersion()
+        private void AddPlatformDetails(StringBuilder result)
         {
-            // http://stackoverflow.com/a/8414517
-            var maybeType = Type.GetType("Mono.Runtime");
-            if (maybeType == null) return "Not Mono";
-            MethodInfo displayName = maybeType.GetMethod("GetDisplayName", BindingFlags.NonPublic | BindingFlags.Static);
-            if (displayName == null) return "Not Mono";
-            return (string)displayName.Invoke(null, null);
+            result.AppendLine("PLATFORM");
+            result.AppendLine("OSPlatform: " + Environment.OSVersion.Platform);
+            result.AppendLine("OSVersion: " + Environment.OSVersion.VersionString);
+            result.AppendLine("OSArchitecture: " + RuntimeInformation.OSArchitecture);
+            result.AppendLine("OSDescription: " + RuntimeInformation.OSDescription);
+            result.AppendLine("FrameworkVersion: " + Environment.Version);
+            result.AppendLine("FrameworkDescription: " + RuntimeInformation.FrameworkDescription);
+            result.AppendLine("ProcessArchitecture: " + RuntimeInformation.ProcessArchitecture);
+            result.AppendLine("RuntimeIdentifier: " + RuntimeInformation.RuntimeIdentifier);
+            result.AppendLine();
         }
     }
 }
