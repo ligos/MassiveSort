@@ -26,9 +26,9 @@ namespace MurrayGrant.MassiveSort.Comparers
     /// </summary>
     public class ClrOffsetDictionaryComparer : IComparer<OffsetAndLength>, IEqualityComparer<OffsetAndLength>
     {
-        private readonly byte[] _Data;
+        private readonly ReadOnlyMemory<byte> _Data;
 
-        public ClrOffsetDictionaryComparer(byte[] data)
+        public ClrOffsetDictionaryComparer(ReadOnlyMemory<byte> data)
         {
             this._Data = data;
         }
@@ -39,11 +39,12 @@ namespace MurrayGrant.MassiveSort.Comparers
                 return true;
             if (first.Length != second.Length)
                 return false;
+            var data = this._Data.Span;
 
             // PERF: tried to unroll this, but it didn't improve performance.
             for (int i = 0; i < first.Length; i++)
             {
-                if (this._Data[first.Offset+i] != this._Data[second.Offset+i])
+                if (data[first.Offset+i] != data[second.Offset+i])
                     return false;
             }
             return true;
@@ -80,10 +81,12 @@ namespace MurrayGrant.MassiveSort.Comparers
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         private int CompareToLength(OffsetAndLength first, OffsetAndLength second, int len)
         {
+            var data = this._Data.Span;
+
             // PERF: tried to unroll this, but it didn't improve performance.
             for (int i = 0; i < len; i++)
             {
-                var compareResult = this._Data[first.Offset + i].CompareTo(this._Data[second.Offset + i]);
+                var compareResult = data[first.Offset + i].CompareTo(data[second.Offset + i]);
                 // Finish early if we find a difference.
                 if (compareResult != 0)
                     return compareResult;

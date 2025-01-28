@@ -26,9 +26,9 @@ namespace MurrayGrant.MassiveSort.Comparers
     /// </summary>
     public class ClrOffsetLengthComparer : IComparer<OffsetAndLength>, IEqualityComparer<OffsetAndLength>
     {
-        private readonly byte[] _Data;
+        private readonly ReadOnlyMemory<byte> _Data;
 
-        public ClrOffsetLengthComparer(byte[] data)
+        public ClrOffsetLengthComparer(ReadOnlyMemory<byte> data)
         {
             this._Data = data;
         }
@@ -39,11 +39,12 @@ namespace MurrayGrant.MassiveSort.Comparers
                 return true;
             if (first.Length != second.Length)
                 return false;
+            var data = this._Data.Span;
 
             // PERF: tried to unroll this, but it didn't improve performance.
             for (int i = 0; i < first.Length; i++)
             {
-                if (this._Data[first.Offset+i] != this._Data[second.Offset+i])
+                if (data[first.Offset+i] != data[second.Offset+i])
                     return false;
             }
             return true;
@@ -57,6 +58,7 @@ namespace MurrayGrant.MassiveSort.Comparers
         public int Compare(OffsetAndLength first, OffsetAndLength second)
         {
             // PERF: this is the hot method when sorting.
+            var data = this._Data.Span;
             
             var cmp = first.Length.CompareTo(second.Length);
             if (cmp != 0)
@@ -65,7 +67,7 @@ namespace MurrayGrant.MassiveSort.Comparers
             // Same length compares actual bytes.
             for (int i = 0; i < first.Length; i++)
             {
-                cmp = this._Data[first.Offset + i].CompareTo(this._Data[second.Offset + i]);
+                cmp = data[first.Offset + i].CompareTo(data[second.Offset + i]);
                 // Finish early if we find a difference.
                 if (cmp != 0)
                     return cmp;
