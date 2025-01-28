@@ -63,42 +63,6 @@ namespace MurrayGrant.MassiveSort
             throw new Exception("Cannot find temporary folder. Tried environment variables: " + String.Join(",", _TempEnvironmentVars));
         }
 
-        public static IEnumerable<byte[]> YieldLinesAsByteArray(this FileInfo fi, int streamBufferSize, int lineBufferSize)
-        {
-            using (var stream = new FileStream(fi.FullName, FileMode.Open, FileAccess.Read, FileShare.Read, streamBufferSize))
-            {
-                var buf = new byte[lineBufferSize];		// Max line length in bytes.
-                int b = 0, i = 0;
-                bool lastByteWasNewLine = false;
-                while ((b = stream.ReadByte()) != -1)
-                {
-                    if (lastByteWasNewLine && (b == 0x0a || b == 0x0d))
-                        continue;
-
-                    // Look for an end of line or null byte.
-                    if (i < buf.Length && !(b == 0x0a || b == 0x0d))
-                    {
-                        // Not found: keep looking.
-                        buf[i] = (byte)b;
-                        i++;
-                        lastByteWasNewLine = false;
-                    }
-                    else
-                    {
-                        // Found: copy to new buffer and yield.
-                        var result = new byte[i];
-                        for (int j = 0; j < result.Length; j++)
-                            result[j] = buf[j];
-                        yield return result;
-
-                        i = 0;
-                        lastByteWasNewLine = true;
-                    }
-                }
-            }
-        }
-
-
         /// <summary>
         /// Hex string lookup table.
         /// </summary>
