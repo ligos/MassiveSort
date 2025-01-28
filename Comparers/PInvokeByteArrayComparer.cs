@@ -16,23 +16,23 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
 
 namespace MurrayGrant.MassiveSort.Comparers
 {
-    public class PInvokeByteArrayComparer : IComparer<byte[]>, IEqualityComparer<byte[]>
+    public class PInvokeByteArrayComparer : IComparer<ReadOnlyMemory<byte>>, IEqualityComparer<ReadOnlyMemory<byte>>
     {
         public static readonly PInvokeByteArrayComparer Value = new PInvokeByteArrayComparer();
 
-        public bool Equals(byte[] first, byte[] second)
+        public bool Equals(ReadOnlyMemory<byte> firstMem, ReadOnlyMemory<byte> secondMem)
         {
-            if (Object.ReferenceEquals(first, second))
+            var first = firstMem.Span;
+            var second = secondMem.Span;
+
+            if (first == second)
                 return true;
-            if (first == null && second == null)
-                return true;
-            if (second == null || first == null)
-                return false;
             if (first.Length != second.Length)
                 return false;
 
@@ -40,12 +40,11 @@ namespace MurrayGrant.MassiveSort.Comparers
             return memcmp(first, second, new UIntPtr((uint)first.Length)) == 0;
         }
 
-        public int GetHashCode(byte[] bytes)
+        public int GetHashCode(ReadOnlyMemory<byte> memory)
         {
-            int result = typeof(byte[]).GetHashCode();
-            if (bytes == null)
-                return result;
+            var bytes = memory.Span;
 
+            var result = 0;
             int shift = 0;
             for (int i = 0; i < bytes.Length; i++)
             {
@@ -57,14 +56,12 @@ namespace MurrayGrant.MassiveSort.Comparers
             return result;
         }
 
-        public int Compare(byte[] first, byte[] second)
+        public int Compare(ReadOnlyMemory<byte> firstMem, ReadOnlyMemory<byte> secondMem)
         {
             // See also http://stackoverflow.com/questions/3000803/how-to-call-memcmp-on-two-parts-of-byte-with-offset
 
-            if (first == null)
-                return 1;
-            if (second == null)
-                return -1;
+            var first = firstMem.Span;
+            var second = secondMem.Span;
 
             if (first.Length == second.Length)
                 // Same length: just return memcmp() result.
@@ -87,6 +84,6 @@ namespace MurrayGrant.MassiveSort.Comparers
 
         [System.Runtime.InteropServices.DllImport("msvcrt.dll", CallingConvention = System.Runtime.InteropServices.CallingConvention.Cdecl)]
         [System.Security.SuppressUnmanagedCodeSecurity]
-        static extern int memcmp(byte[] b1, byte[] b2, UIntPtr count);
+        static extern int memcmp(ReadOnlySpan<byte> b1, ReadOnlySpan<byte> b2, UIntPtr count);
     }
 }

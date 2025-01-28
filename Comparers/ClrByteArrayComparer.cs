@@ -21,18 +21,16 @@ using System.Threading.Tasks;
 
 namespace MurrayGrant.MassiveSort.Comparers
 {
-    public class ClrByteArrayComparer : IComparer<byte[]>, IEqualityComparer<byte[]>
+    public sealed class ClrByteArrayComparer : IComparer<ReadOnlyMemory<byte>>, IEqualityComparer<ReadOnlyMemory<byte>>
     {
         public static readonly ClrByteArrayComparer Value = new ClrByteArrayComparer();
 
-        public bool Equals(byte[] first, byte[] second)
+        public bool Equals(ReadOnlyMemory<byte> firstMem, ReadOnlyMemory<byte> secondMem)
         {
-            if (Object.ReferenceEquals(first, second))
+            var first = firstMem.Span;
+            var second = secondMem.Span;
+            if (first == second)
                 return true;
-            if (first == null && second == null)
-                return true;
-            if (second == null || first == null)
-                return false;
             if (first.Length != second.Length)
                 return false;
 
@@ -98,12 +96,10 @@ namespace MurrayGrant.MassiveSort.Comparers
             }
         }
 
-        public int GetHashCode(byte[] bytes)
+        public int GetHashCode(ReadOnlyMemory<byte> memory)
         {
-            int result = typeof(byte[]).GetHashCode();
-            if (bytes == null)
-                return result;
-
+            var bytes = memory.Span;
+            int result = 0;
             int shift = 0;
             for (int i = 0; i < bytes.Length; i++)
             {
@@ -115,12 +111,10 @@ namespace MurrayGrant.MassiveSort.Comparers
             return result;
         }
 
-        public int Compare(byte[] first, byte[] second)
+        public int Compare(ReadOnlyMemory<byte> firstMem, ReadOnlyMemory<byte> secondMem)
         {
-            if (first == null)
-                return 1;
-            if (second == null)
-                return -1;
+            var first = firstMem.Span;
+            var second = secondMem.Span;
 
             if (first.Length == second.Length)
                 // Same length: just return the comparison result.
@@ -142,7 +136,7 @@ namespace MurrayGrant.MassiveSort.Comparers
         }
 
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
-        private int CompareToLength(byte[] first, byte[] second, int len)
+        private int CompareToLength(ReadOnlySpan<byte> first, ReadOnlySpan<byte> second, int len)
         {
             // Assume that len <= first.Length and len <= second.Length
             for (int i = 0; i < len; i++)
