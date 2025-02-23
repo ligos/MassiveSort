@@ -427,6 +427,7 @@ Help for 'merge" verb:
         private readonly IProgress<BasicProgress> _Progress = new ConsoleProgressReporter();
 
         private StreamWriter _StatsFile;
+        private readonly MemoryPool<byte> _MemoryPool = MemoryPool<byte>.Shared;
 
         public MergeMany(MergeConf conf)
         {
@@ -741,60 +742,62 @@ Help for 'merge" verb:
             long linesStripped = 0;
             long linesConvertedToDollarHex = 0;
 
-            var buffer = new byte[_Conf.LineBufferSize];
-            // The allocation size allow us to convert a full line buffer to $HEX[...] format.
-            var dollarHexBuffer = new byte[_Conf.LineBufferSize * 2 + Constants.DollarHexPrefix.Length + 1 /* ']' */ + 1 /* '\n' */];
-            var whitespaceBuffer = new byte[_Conf.LineBufferSize];
-
             bool trimWhitespace = (_Conf.Whitespace == MergeConf.WhitespaceOptions.Trim);
             bool stripWhitespace = (_Conf.Whitespace == MergeConf.WhitespaceOptions.Strip);
             bool convertToDollarHex = _Conf.ConvertToDollarHex;
 
-            _Progress.Report(new TaskProgress(String.Format("Splitting '{0}'...", ch.NameForProgress), false, taskKey));
-            var sw = Stopwatch.StartNew();
-
-            var reader = new PlainRaw(_CancelToken, _Conf.ReadBufferSize);
-            foreach (var line in reader.ReadAll(buffer, ch.FullPath, ch.StartOffset, ch.EndOffset))
+            // The allocation size allow us to convert a full line buffer to $HEX[...] format.
+            var sizeForDollarHex = _Conf.LineBufferSize * 2 + Constants.DollarHexPrefix.Length + 1 /* ']' */ + 1 /* '\n' */;
+            using (var buffer = _MemoryPool.Rent(_Conf.LineBufferSize))
+            using (var whitespaceBuffer = _MemoryPool.Rent(_Conf.LineBufferSize))
+            using (var dollarHexBuffer = _MemoryPool.Rent(sizeForDollarHex))
             {
-                // Additional processing happens here.
+                _Progress.Report(new TaskProgress(String.Format("Splitting '{0}'...", ch.NameForProgress), false, taskKey));
+                var sw = Stopwatch.StartNew();
 
-                // The order of these means only one will ever be triggered.
-                // The code, as it stands, will not cope with two copies of the line (the copies will overwrite each other on the 2nd call).
-                var toWrite = line.Span;
+                var reader = new PlainRaw(_CancelToken, _Conf.ReadBufferSize);
+                foreach (var line in reader.ReadAll(buffer.Memory, ch.FullPath, ch.StartOffset, ch.EndOffset))
+                {
+                    // Additional processing happens here.
 
-                // Convert to $HEX before trimming, as any removal of whitespace will break unicode (UTF-16) encoded strings.
-                if (convertToDollarHex)
-                    linesConvertedToDollarHex += this.ConvertToDollarHex(toWrite, dollarHexBuffer, out toWrite);
+                    // The order of these means only one will ever be triggered.
+                    // The code, as it stands, will not cope with two copies of the line (the copies will overwrite each other on the 2nd call).
+                    var toWrite = line.Span;
 
-                // Trimming whitespace does not require a change to the buffer or any copying.
+                    // Convert to $HEX before trimming, as any removal of whitespace will break unicode (UTF-16) encoded strings.
+                    if (convertToDollarHex)
+                        linesConvertedToDollarHex += this.ConvertToDollarHex(toWrite, dollarHexBuffer.Memory.Span, out toWrite);
+
+                    // Trimming whitespace does not require a change to the buffer or any copying.
+                    if (trimWhitespace)
+                        linesTrimmed += this.TrimWhitespace(toWrite, _Conf.WhitespaceCharsAsBytes.Span, out toWrite);
+
+                    // Stripping all whitespace may require a copy to the alternate buffer.
+                    if (stripWhitespace)
+                        linesStripped += this.StripWhitespace(toWrite, whitespaceBuffer.Memory.Span, _Conf.WhitespaceCharsAsBytes.Span, out toWrite);
+
+
+                    // Write the word to the shard file.
+                    // PERF: about 45% of CPU time is spent in FileStream.Write(), contained in ShardWordToFile().
+                    if (lockStreams)
+                        ShardWordToFileWithStreamLock(toWrite, shardSize, shardFiles, lineCounts);
+                    else
+                        ShardWordToFileWithoutLock(toWrite, shardSize, shardFiles, lineCounts);
+                }
+                sw.Stop();
+                _Progress.Report(new TaskProgress(" Done.", true, taskKey));
+
+                this.WriteStats("File '{0}': {1:N0} lines processed in {2:N1}ms, {3:N1} lines / sec, {4:N1} MB / sec.", ch.NameForProgress, reader.LinesRead, sw.Elapsed.TotalMilliseconds, reader.LinesRead / sw.Elapsed.TotalSeconds, (ch.Length / oneMbAsDouble) / sw.Elapsed.TotalSeconds);
+                this.WriteStats("File '{0}': {1:N0} line buffers read, {2:N0} line buffers skipped because lines were too long, {3:N0} additional seeks due to buffer alignment.", ch.NameForProgress, reader.BuffersRead, reader.BuffersSkipped, reader.ExtraSeeks);
                 if (trimWhitespace)
-                    linesTrimmed += this.TrimWhitespace(toWrite, _Conf.WhitespaceCharsAsBytes.Span, out toWrite);
-
-                // Stripping all whitespace may require a copy to the alternate buffer.
+                    this.WriteStats("File '{0}': {1:N0} lines had whitespace trimmed.", ch.NameForProgress, linesTrimmed);
                 if (stripWhitespace)
-                    linesStripped += this.StripWhitespace(toWrite, whitespaceBuffer, _Conf.WhitespaceCharsAsBytes.Span, out toWrite);
+                    this.WriteStats("File '{0}': {1:N0} lines had whitespace stripped.", ch.NameForProgress, linesStripped);
+                if (convertToDollarHex)
+                    this.WriteStats("File '{0}': {1:N0} lines were converted to $HEX[].", ch.NameForProgress, linesConvertedToDollarHex);
 
-
-                // Write the word to the shard file.
-                // PERF: about 45% of CPU time is spent in FileStream.Write(), contained in ShardWordToFile().
-                if (lockStreams)
-                    ShardWordToFileWithStreamLock(toWrite, shardSize, shardFiles, lineCounts);
-                else
-                    ShardWordToFileWithoutLock(toWrite, shardSize, shardFiles, lineCounts);
+                return reader.LinesRead;
             }
-            sw.Stop();
-            _Progress.Report(new TaskProgress(" Done.", true, taskKey));
-
-            this.WriteStats("File '{0}': {1:N0} lines processed in {2:N1}ms, {3:N1} lines / sec, {4:N1} MB / sec.", ch.NameForProgress, reader.LinesRead, sw.Elapsed.TotalMilliseconds, reader.LinesRead / sw.Elapsed.TotalSeconds, (ch.Length / oneMbAsDouble) / sw.Elapsed.TotalSeconds);
-            this.WriteStats("File '{0}': {1:N0} line buffers read, {2:N0} line buffers skipped because lines were too long, {3:N0} additional seeks due to buffer alignment.", ch.NameForProgress, reader.BuffersRead, reader.BuffersSkipped, reader.ExtraSeeks);
-            if (trimWhitespace)
-                this.WriteStats("File '{0}': {1:N0} lines had whitespace trimmed.", ch.NameForProgress, linesTrimmed);
-            if (stripWhitespace)
-                this.WriteStats("File '{0}': {1:N0} lines had whitespace stripped.", ch.NameForProgress, linesStripped);
-            if (convertToDollarHex)
-                this.WriteStats("File '{0}': {1:N0} lines were converted to $HEX[].", ch.NameForProgress, linesConvertedToDollarHex);
-
-            return reader.LinesRead;
         }
 
 
