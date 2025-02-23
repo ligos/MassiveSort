@@ -18,8 +18,9 @@ namespace MurrayGrant.MassiveSort
         public const char NewLineAlt = '\r';
         public const byte NewLineAsByteAlt = (byte)'\r';
 
-        public static readonly byte[] DollarHexPrefix = Encoding.ASCII.GetBytes("$HEX[");
-        public static readonly byte[] DollarHexSuffix = Encoding.ASCII.GetBytes("]");
+        public static readonly ReadOnlyMemory<byte> DollarHexPrefix = "$HEX["u8.ToArray();
+        public const byte DollarHexSuffixAsByte = (byte)']';
 
+        public static readonly ReadOnlyMemory<byte> DefaultWhitespace = new byte[] { 0x20, 0x09, 0x0b };
     }
 }

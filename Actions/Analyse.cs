@@ -208,7 +208,7 @@ TODO
             var reader = new PlainRaw(_CancelToken, _Conf.LineBufferSize, _Conf.ReadBufferSize);
             foreach (var line in reader.ReadAll(ch.FullPath, ch.StartOffset, ch.EndOffset))
             {
-                acc.AddOneByLength(line.Count);
+                acc.AddOneByLength(line.Length);
                 acc.AddOneToCategoryMasks(line);
                 if (_CancelToken.IsCancellationRequested) break;
             }
@@ -274,14 +274,14 @@ TODO
 
             public UInt64[] CountsByAllCategoryMask;        // CharCategory, added together, is the index.
             public UInt64[] CountsByAnyCategoryMask;        // The nth bit of the CharCategory is the index.
-            public void AddOneToCategoryMasks(ByteArraySegment line)
+            public void AddOneToCategoryMasks(ReadOnlyMemory<byte> line)
             {
                 // TODO: decode $HEX[] to a byte array.
 
                 int allMasks = 0;
-                for (int i = 0; i < line.Count; i++)
+                for (int i = 0; i < line.Length; i++)
                 {
-                    var b = line.Array[line.Offset+i];
+                    var b = line.Span[i];
                     if (b >= 0x41 && b <= 0x5a)
                         // Upper letter
                         allMasks |= (int)CharCategory.UppercaseLetter;

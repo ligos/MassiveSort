@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Buffers;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -37,12 +38,12 @@ namespace MurrayGrant.MassiveSort.Readers
         }
 
 
-        public IEnumerable<ByteArraySegment> ReadAll(string fullPath)
+        public IEnumerable<ReadOnlyMemory<byte>> ReadAll(string fullPath)
         {
             var fileLength = new FileInfo(fullPath).Length;
             return this.ReadAll(fullPath, 0L, fileLength);
         }
-        public IEnumerable<ByteArraySegment> ReadAll(string fullPath, long startOffset, long endOffset)
+        public IEnumerable<ReadOnlyMemory<byte>> ReadAll(string fullPath, long startOffset, long endOffset)
         {
             if (startOffset > endOffset)
                 throw new ArgumentOutOfRangeException("startOffset", startOffset, "Start must be before End.");
@@ -57,7 +58,7 @@ namespace MurrayGrant.MassiveSort.Readers
             bool emptyStringFound = false;
 
             // Line buffer.
-            var lineBuffer = new byte[_LineBufferSize];
+            var lineBuffer = new byte[_LineBufferSize].AsMemory();
 
 
             // Split the file into chunks.
@@ -68,7 +69,7 @@ namespace MurrayGrant.MassiveSort.Readers
                 // Read the file in buffer sized chunks.
                 // This is perf critical code.
                 // PERF: about 30% of CPU time is spent in this loop and inlined functions (not in the marked functions).
-                while ((bytesInBuffer = ReadLineBuffer(stream, lineBuffer, endOffset)) > 0)
+                while ((bytesInBuffer = ReadLineBuffer(stream, lineBuffer.Span, endOffset)) > 0)
                 {
                     if (_CancelToken.IsCancellationRequested) break;
                     buffersRead++;
@@ -76,22 +77,22 @@ namespace MurrayGrant.MassiveSort.Readers
                     OffsetAndLength ol;
 
                     // Ensure an empty string is written if present in the buffer.
-                    if (!emptyStringFound && BufferContainsEmptyString(lineBuffer, bytesInBuffer))
+                    if (!emptyStringFound && BufferContainsEmptyString(lineBuffer.Span))
                     {
                         linesRead++;
-                        yield return new ByteArraySegment();
+                        yield return Memory<byte>.Empty;
                     }
 
                     do
                     {
                         // Find the next word.
                         // PERF: about 20% of CPU time is spent in NextWord().
-                        ol = NextWord(lineBuffer, idx);
+                        ol = NextWord(lineBuffer.Span, idx);
 
                         if (ol.Length >= 0 && ol.Offset >= 0)
                         {
                             // The offset and length are valid, yield to consumer.
-                            var result = new ByteArraySegment(lineBuffer, ol.Offset, ol.Length);
+                            ReadOnlyMemory<byte> result = lineBuffer.Slice(ol.Offset, ol.Length);
                             linesRead++;
                             yield return result;
 
@@ -191,9 +192,9 @@ namespace MurrayGrant.MassiveSort.Readers
 
 
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
-        private bool BufferContainsEmptyString(byte[] buf, int len)
+        private bool BufferContainsEmptyString(ReadOnlySpan<byte> buf)
         {
-            for (int i = 1; i < len; i++)
+            for (int i = 1; i < buf.Length; i++)
             {
                 if (
                     // \n\n
@@ -211,14 +212,15 @@ namespace MurrayGrant.MassiveSort.Readers
         }
 
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
-        private int ReadLineBuffer(FileStream stream, byte[] buf, long endOffset)
+        private int ReadLineBuffer(FileStream stream, Span<byte> buf, long endOffset)
         {
             var maxToRead = buf.Length;
             var fileRemaining = endOffset - stream.Position;
             if (fileRemaining < maxToRead)
                 maxToRead = (int)fileRemaining;
+            var readBuf = buf.Slice(0, maxToRead);
 
-            int bytesRead = stream.Read(buf, 0, maxToRead);
+            int bytesRead = stream.Read(readBuf);
             if (bytesRead <= 0)
                 // End of file / chunk.
                 return 0;
@@ -234,7 +236,7 @@ namespace MurrayGrant.MassiveSort.Readers
         }
 
 
-        private OffsetAndLength NextWord(byte[] buf, int startIdx)
+        private OffsetAndLength NextWord(ReadOnlySpan<byte> buf, int startIdx)
         {
             if (startIdx >= buf.Length)
                 // Past the end of the buffer.
@@ -258,7 +260,7 @@ namespace MurrayGrant.MassiveSort.Readers
         }
 
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
-        private int NextNonNewlineInBuffer(byte[] buf, int startIdx)
+        private int NextNonNewlineInBuffer(ReadOnlySpan<byte> buf, int startIdx)
         {
             for (int i = startIdx; i < buf.Length; i++)
             {
@@ -268,7 +270,7 @@ namespace MurrayGrant.MassiveSort.Readers
             return -1;
         }
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
-        private int NextNewlineInBuffer(byte[] buf, int startIdx)
+        private int NextNewlineInBuffer(ReadOnlySpan<byte> buf, int startIdx)
         {
             // PERF: might be worth trying pinvoke to memchr() 
             for (int i = startIdx; i < buf.Length; i++)

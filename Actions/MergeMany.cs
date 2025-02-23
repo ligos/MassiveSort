@@ -63,7 +63,7 @@ namespace MurrayGrant.MassiveSort.Actions
             this.SortOrder = SortOrders.Dictionary;         // IComparer implementation to use - default to natural dictionary order.
 
             this.Whitespace = WhitespaceOptions.NoChange;   // Make no changes to whitespace.
-            this.WhitespaceChars = new byte[] { 0x20, 0x09, 0x0b };     // Whitespace characters.
+            this.WhitespaceChars = Constants.DefaultWhitespace.ToArray();     // Whitespace characters.
             this.ConvertToDollarHex = false;                // Do not convert to $HEX[...] format by default.
         }
 
@@ -295,7 +295,7 @@ Help for 'merge" verb:
         /// </summary>
         [Option("whitespace-chars")]
         public IEnumerable<byte> WhitespaceChars { get; set; }
-        internal byte[] WhitespaceCharsAsBytes { get; set; }
+        internal ReadOnlyMemory<byte> WhitespaceCharsAsBytes { get; set; }
 
         /// <summary>
         /// If true, will convert all lines outside printable ASCII range to the $HEX[...] format. False by default.
@@ -337,7 +337,13 @@ Help for 'merge" verb:
             if (!String.IsNullOrEmpty(this.LargeFileChunkSize_Raw) && Helpers.TryParseByteSized(this.LargeFileChunkSize_Raw, out size))
                 LargeFileChunkSize = (int)size;
 
-            WhitespaceCharsAsBytes = WhitespaceChars.ToArray();
+            // For some reason, the command line parser is very keen on setting WhitespaceChars to an empty array.
+            // Even if the parameter is not present on the command line.
+            // So, we handle that case here.
+            if (WhitespaceChars.Any())
+                WhitespaceCharsAsBytes = WhitespaceChars.ToArray();
+            else
+                WhitespaceCharsAsBytes = Constants.DefaultWhitespace;
 
             return this;
         }
@@ -735,7 +741,8 @@ Help for 'merge" verb:
             long linesConvertedToDollarHex = 0;
             // For additional processing which requires a copy of data.
             // The allocation size allow us to convert a full line buffer to $HEX[...] format.
-            var extraBuffer = new byte[_Conf.LineBufferSize * 2 + Constants.DollarHexPrefix.Length + Constants.DollarHexSuffix.Length];
+            var dollarHexBuffer = new byte[_Conf.LineBufferSize * 2 + Constants.DollarHexPrefix.Length + 1 /* ']' */ + 1 /* '\n' */];
+            var whitespaceBuffer = new byte[_Conf.LineBufferSize];
             bool trimWhitespace = (_Conf.Whitespace == MergeConf.WhitespaceOptions.Trim);
             bool stripWhitespace = (_Conf.Whitespace == MergeConf.WhitespaceOptions.Strip);
             bool convertToDollarHex = _Conf.ConvertToDollarHex;
@@ -750,29 +757,19 @@ Help for 'merge" verb:
 
                 // The order of these means only one will ever be triggered.
                 // The code, as it stands, will not cope with two copies of the line (the copies will overwrite each other on the 2nd call).
-                var toWrite = line;
+                var toWrite = line.Span;
 
                 // Convert to $HEX before trimming, as any removal of whitespace will break unicode (UTF-16) encoded strings.
                 if (convertToDollarHex)
-                {
-                    var maybeChanged = this.ConvertToDollarHex(toWrite, extraBuffer);
-                    if (toWrite != maybeChanged) linesConvertedToDollarHex++;
-                    toWrite = maybeChanged;
-                }
+                    linesConvertedToDollarHex += this.ConvertToDollarHex(toWrite, dollarHexBuffer, out toWrite);
+
                 // Trimming whitespace does not require a change to the buffer or any copying.
                 if (trimWhitespace)
-                {
-                    var maybeChanged = this.TrimWhitespace(toWrite, _Conf.WhitespaceCharsAsBytes);
-                    if (toWrite != maybeChanged) linesTrimmed++;
-                    toWrite = maybeChanged;
-                }
+                    linesTrimmed += this.TrimWhitespace(toWrite, _Conf.WhitespaceCharsAsBytes.Span, out toWrite);
+
                 // Stripping all whitespace may require a copy to the alternate buffer.
                 if (stripWhitespace)
-                {
-                    var maybeChanged = this.StripWhitespace(toWrite, extraBuffer, _Conf.WhitespaceCharsAsBytes);
-                    if (toWrite != maybeChanged) linesStripped++;
-                    toWrite = maybeChanged;
-                }
+                    linesStripped += this.StripWhitespace(toWrite, whitespaceBuffer, _Conf.WhitespaceCharsAsBytes.Span, out toWrite);
 
 
                 // Write the word to the shard file.
@@ -799,154 +796,171 @@ Help for 'merge" verb:
 
 
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
-        private void ShardWordToFileWithoutLock(ByteArraySegment seg, int shardSize, ShardFile[] shardFiles, long[] lineCounts)
+        private void ShardWordToFileWithoutLock(ReadOnlySpan<byte> wordBytes, int shardSize, ShardFile[] shardFiles, long[] lineCounts)
         {
             // Determine the first character(s) to shard into separate files.
             int shard;
-            if (shardSize > seg.Count)
+            if (shardSize > wordBytes.Length)
                 shard = shardFiles.Length - 1;     // Empty string / no shard.
             else
-                shard = seg.Array[seg.Offset + (shardSize - 1)];
+                shard = wordBytes[shardSize - 1];
 
 #if DEBUG
             if (System.Diagnostics.Debugger.IsAttached)
             {
-                var wordAsBytes = seg.Array.Skip(seg.Offset).Take(seg.Count).ToArray();
-                var wordAsNativeString = Encoding.Default.GetString(wordAsBytes);
-                var wordAsUtf8String = Encoding.UTF8.GetString(wordAsBytes);
+                var wordAsBytes = wordBytes.ToArray();
+                var wordAsNativeString = Encoding.Default.GetString(wordBytes);
+                var wordAsUtf8String = Encoding.UTF8.GetString(wordBytes);
             }
 #endif
             // Write the line to the file.
             var stream = shardFiles[shard].Stream;
-            if (seg.Count > 0)
-                stream.Write(seg.Array, seg.Offset, seg.Count);
+            if (wordBytes.Length > 0)
+                stream.Write(wordBytes);
             stream.WriteByte(Constants.NewLineAsByte);
             lineCounts[shard] = lineCounts[shard] + 1;
         }
 
-        private void ShardWordToFileWithStreamLock(ByteArraySegment seg, int shardSize, ShardFile[] shardFiles, long[] lineCounts)
+        private void ShardWordToFileWithStreamLock(ReadOnlySpan<byte> wordBytes, int shardSize, ShardFile[] shardFiles, long[] lineCounts)
         {
             // The lock makes it highly unlikely to inline this function call, hence why the code is mostly duplicated.
 
             // Determine the first character(s) to shard into separate files.
             int shard;
-            if (shardSize > seg.Count)
+            if (shardSize > wordBytes.Length)
                 shard = shardFiles.Length - 1;     // Empty string / no shard.
             else
-                shard = seg.Array[seg.Offset + (shardSize - 1)];
+                shard = wordBytes[shardSize - 1];
 
 #if DEBUG
-            if (System.Diagnostics.Debugger.IsAttached && seg.Count > 0 && seg.Array != null)
+            if (System.Diagnostics.Debugger.IsAttached && wordBytes.Length > 0)
             {
-                var wordAsBytes = seg.Array.Skip(seg.Offset).Take(seg.Count).ToArray();
-                var wordAsNativeString = Encoding.Default.GetString(wordAsBytes);
-                var wordAsUtf8String = Encoding.UTF8.GetString(wordAsBytes);
+                var wordAsBytes = wordBytes.ToArray();
+                var wordAsNativeString = Encoding.Default.GetString(wordBytes);
+                var wordAsUtf8String = Encoding.UTF8.GetString(wordBytes);
             }
 #endif
             // Write the line to the file.
             var stream = shardFiles[shard].Stream;
             lock (stream)
             {
-                if (seg.Count > 0)
-                    stream.Write(seg.Array, seg.Offset, seg.Count);
+                if (wordBytes.Length > 0)
+                    stream.Write(wordBytes);
                 stream.WriteByte(Constants.NewLineAsByte);
                 lineCounts[shard] = lineCounts[shard] + 1;
             }
         }
 
 
-        private ByteArraySegment TrimWhitespace(ByteArraySegment seg, byte[] whitespaceChars)
+        private long TrimWhitespace(ReadOnlySpan<byte> wordBytes, ReadOnlySpan<byte> whitespaceChars, out ReadOnlySpan<byte> result)
         {
             // Skip over any whitespace at the start.
-            int newOffset = seg.Offset;
-            for (int i = seg.Offset; i < seg.Offset + seg.Count; i++)
+            int newStart = 0;
+            for (int i = 0; i < wordBytes.Length; i++)
             {
                 bool isWhitespace = false;
                 for (int j = 0; j < whitespaceChars.Length; j++)
-                    isWhitespace = isWhitespace | (seg.Array[i] == whitespaceChars[j]);
+                    isWhitespace |= (wordBytes[i] == whitespaceChars[j]);
+
                 if (isWhitespace)
-                    newOffset = i;
+                    newStart = i+1;
                 else
                     break;
             }
 
             // Skip over any whitespace at the end.
-            int newLength = seg.Count - (newOffset - seg.Offset);
-            for (int i = seg.Offset + seg.Count - 1; i >= newOffset; i--)
+            int newEnd = wordBytes.Length;
+            for (int i = wordBytes.Length - 1; i >= newStart; i--)
             {
                 bool isWhitespace = false;
                 for (int j = 0; j < whitespaceChars.Length; j++)
-                    isWhitespace = isWhitespace | (seg.Array[i] == whitespaceChars[j]);
+                    isWhitespace |= (wordBytes[i] == whitespaceChars[j]);
+
                 if (isWhitespace)
-                    newLength = (i - newOffset);
+                    newEnd = i - 1;
                 else
                     break;
             }
 
-            return new ByteArraySegment(seg.Array, newOffset, newLength);
+            if (newStart >= newEnd)
+                result = [];
+            else
+                result = wordBytes[newStart..newEnd];
+
+            if (newStart != 0 || newEnd != wordBytes.Length)
+                return 1L;
+            else
+                return 0L;
         }
-        private ByteArraySegment StripWhitespace(ByteArraySegment seg, byte[] otherBuf, byte[] whitespaceChars)
+        private long StripWhitespace(ReadOnlySpan<byte> wordBytes, Span<byte> secondBuffer, ReadOnlySpan<byte> whitespaceChars, out ReadOnlySpan<byte> result)
         {
             // Search for whitespace.
             bool hasWhitespace = false;
-            for (int i = seg.Offset; i < seg.Offset + seg.Count; i++)
+            for (int i = 0; i < wordBytes.Length; i++)
             {
                 for (int j = 0; j < whitespaceChars.Length; j++)
-                    hasWhitespace = hasWhitespace | (seg.Array[i] == whitespaceChars[j]);
+                    hasWhitespace = hasWhitespace | (wordBytes[i] == whitespaceChars[j]);
                 if (hasWhitespace)
                     break;
             }
             if (!hasWhitespace)
-                // No whitespace found: return the original segment untouched.
-                return seg;
+            {
+                // No whitespace found: return the original span.
+                result = wordBytes;
+                return 0L;
+            }
 
             // Make a copy into the other buffer, but skip any whitespace.
             int oBufIdx = 0;
-            for (int i = seg.Offset; i < seg.Offset + seg.Count; i++)
+            for (int i = 0; i < wordBytes.Length; i++)
             {
                 bool isWhitespace = false;
                 for (int j = 0; j < whitespaceChars.Length; j++)
-                    isWhitespace = isWhitespace | (seg.Array[i] == whitespaceChars[j]);
+                    isWhitespace = isWhitespace | (wordBytes[i] == whitespaceChars[j]);
                 if (!isWhitespace)
                 {
-                    otherBuf[oBufIdx] = seg.Array[i];
+                    secondBuffer[oBufIdx] = wordBytes[i];
                     oBufIdx++;
                 }
             }
-            return new ByteArraySegment(otherBuf, 0, oBufIdx);
+            result = secondBuffer[..oBufIdx];
+            return 1L;
         }
-        private ByteArraySegment ConvertToDollarHex(ByteArraySegment seg, byte[] otherBuf)
+        private long ConvertToDollarHex(ReadOnlySpan<byte> wordBytes, Span<byte> secondBuffer, out ReadOnlySpan<byte> result)
         {
             // The best definition of the $HEX[] convention is in Waffle's hashcat proposal: https://hashcat.net/trac/ticket/148
 
             // Check for the presence of "special" bytes.
             // That is, control bytes in the range 0x00 - 0x1f and 0x7f - 0xff.
             bool convert = false;
-            for (int i = seg.Offset; i < seg.Offset + seg.Count; i++)
+            for (int i = 0; i < wordBytes.Length; i++)
             {
-                if (seg.Array[i] < 0x20 || seg.Array[i] > 0x7e)
+                if (wordBytes[i] < 0x20 || wordBytes[i] > 0x7e)
                 {
                     convert = true;
                     break;
                 }
             }
             if (!convert)
+            {
                 // No special bytes found: return the original segment untouched.
-                return seg;
+                result = wordBytes;
+                return 0L;
+            }
 
             // Make a copy into the other buffer, converting to hex.
-            int oBufIdx = 0;
             // $HEX[ prefix.
-            for (int i = 0; i < Constants.DollarHexPrefix.Length; oBufIdx++, i++)
-                otherBuf[oBufIdx] = Constants.DollarHexPrefix[i];
+            Constants.DollarHexPrefix.Span.CopyTo(secondBuffer);
+            var idx = Constants.DollarHexPrefix.Length;
             // Actual data.
-            for (int i = seg.Offset; i < seg.Offset + seg.Count; oBufIdx += 2, i++)
-                Helpers.WriteHexToArray(otherBuf, oBufIdx, seg.Array[i]);
+            Helpers.WriteHexToSpan(wordBytes, secondBuffer[idx..]);
+            idx += (wordBytes.Length * 2);  // Two hex bytes per binary byte.
             // ] suffix.
-            for (int i = 0; i < Constants.DollarHexSuffix.Length; oBufIdx++, i++)
-                otherBuf[oBufIdx] = Constants.DollarHexSuffix[i];
+            secondBuffer[idx] = Constants.DollarHexSuffixAsByte;
+            idx += 1;
 
-            return new ByteArraySegment(otherBuf, 0, oBufIdx);
+            result = secondBuffer[..idx];
+            return 1L;
         }
         #endregion
 
