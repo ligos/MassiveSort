@@ -16,7 +16,6 @@ namespace MurrayGrant.MassiveSort.Readers
     public class PlainRaw
     {
         public readonly int _ReadBufferSize;
-        public readonly int _LineBufferSize;
         public readonly CancellationToken _CancelToken;
 
         public long BuffersRead { get; private set; }
@@ -24,26 +23,18 @@ namespace MurrayGrant.MassiveSort.Readers
         public long ExtraSeeks { get; private set; }
         public long BuffersSkipped { get; private set; }
 
-        public PlainRaw(CancellationToken cancelToken)
+        public PlainRaw(CancellationToken cancelToken, int readBufferSize = 64 * 1024)
         {
             _CancelToken = cancelToken;
             _ReadBufferSize = 64 * 1024;
-            _LineBufferSize = 64 * 1024;
-        }
-        public PlainRaw(CancellationToken cancelToken, int lineBufferSize, int readBufferSize)
-        {
-            _CancelToken = cancelToken;
-            _ReadBufferSize = lineBufferSize;
-            _LineBufferSize = readBufferSize;
         }
 
-
-        public IEnumerable<ReadOnlyMemory<byte>> ReadAll(string fullPath)
+        public IEnumerable<ReadOnlyMemory<byte>> ReadAll(Memory<byte> buffer, string fullPath)
         {
             var fileLength = new FileInfo(fullPath).Length;
-            return this.ReadAll(fullPath, 0L, fileLength);
+            return this.ReadAll(buffer, fullPath, 0L, fileLength);
         }
-        public IEnumerable<ReadOnlyMemory<byte>> ReadAll(string fullPath, long startOffset, long endOffset)
+        public IEnumerable<ReadOnlyMemory<byte>> ReadAll(Memory<byte> buffer, string fullPath, long startOffset, long endOffset)
         {
             if (startOffset > endOffset)
                 throw new ArgumentOutOfRangeException("startOffset", startOffset, "Start must be before End.");
@@ -57,9 +48,6 @@ namespace MurrayGrant.MassiveSort.Readers
             int bytesInBuffer = 0;
             bool emptyStringFound = false;
 
-            // Line buffer.
-            var lineBuffer = new byte[_LineBufferSize].AsMemory();
-
 
             // Split the file into chunks.
             using (var stream = new FileStream(fullPath, FileMode.Open, FileAccess.Read, FileShare.Read, _ReadBufferSize))
@@ -69,7 +57,7 @@ namespace MurrayGrant.MassiveSort.Readers
                 // Read the file in buffer sized chunks.
                 // This is perf critical code.
                 // PERF: about 30% of CPU time is spent in this loop and inlined functions (not in the marked functions).
-                while ((bytesInBuffer = ReadLineBuffer(stream, lineBuffer.Span, endOffset)) > 0)
+                while ((bytesInBuffer = ReadLineBuffer(stream, buffer.Span, endOffset)) > 0)
                 {
                     if (_CancelToken.IsCancellationRequested) break;
                     buffersRead++;
@@ -77,7 +65,7 @@ namespace MurrayGrant.MassiveSort.Readers
                     OffsetAndLength ol;
 
                     // Ensure an empty string is written if present in the buffer.
-                    if (!emptyStringFound && BufferContainsEmptyString(lineBuffer.Span))
+                    if (!emptyStringFound && BufferContainsEmptyString(buffer.Span))
                     {
                         linesRead++;
                         yield return Memory<byte>.Empty;
@@ -87,12 +75,12 @@ namespace MurrayGrant.MassiveSort.Readers
                     {
                         // Find the next word.
                         // PERF: about 20% of CPU time is spent in NextWord().
-                        ol = NextWord(lineBuffer.Span, idx);
+                        ol = NextWord(buffer.Span, idx);
 
                         if (ol.Length >= 0 && ol.Offset >= 0)
                         {
                             // The offset and length are valid, yield to consumer.
-                            ReadOnlyMemory<byte> result = lineBuffer.Slice(ol.Offset, ol.Length);
+                            ReadOnlyMemory<byte> result = buffer.Slice(ol.Offset, ol.Length);
                             linesRead++;
                             yield return result;
 
@@ -114,7 +102,7 @@ namespace MurrayGrant.MassiveSort.Readers
                             else if (ol.Length == -1)
                             {
                                 // The buffer splits the word: seek backwards in the file slightly so the next buffer is at the start of the word.
-                                stream.Position = stream.Position - (lineBuffer.Length - ol.Offset);
+                                stream.Position = stream.Position - (buffer.Length - ol.Offset);
                                 extraSeeks++;
                             }
                         }

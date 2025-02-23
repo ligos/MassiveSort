@@ -584,6 +584,7 @@ Help for 'merge" verb:
         }
         private IDictionary<string, FileResult> DoTopLevelSplit(IEnumerable<FileInfo> files)
         {
+            var buffer = new byte[_Conf.LineBufferSize];
             var chunks = new PlainRaw(_CancelToken).ConvertFilesToSplitChunks(files, _Conf.LargeFileThresholdSize, _Conf.LargeFileChunkSize);
             var shardFiles = CreateShardFiles("");
             var lineCounts = new long[shardFiles.Length];
@@ -739,10 +740,12 @@ Help for 'merge" verb:
             long linesTrimmed = 0;
             long linesStripped = 0;
             long linesConvertedToDollarHex = 0;
-            // For additional processing which requires a copy of data.
+
+            var buffer = new byte[_Conf.LineBufferSize];
             // The allocation size allow us to convert a full line buffer to $HEX[...] format.
             var dollarHexBuffer = new byte[_Conf.LineBufferSize * 2 + Constants.DollarHexPrefix.Length + 1 /* ']' */ + 1 /* '\n' */];
             var whitespaceBuffer = new byte[_Conf.LineBufferSize];
+
             bool trimWhitespace = (_Conf.Whitespace == MergeConf.WhitespaceOptions.Trim);
             bool stripWhitespace = (_Conf.Whitespace == MergeConf.WhitespaceOptions.Strip);
             bool convertToDollarHex = _Conf.ConvertToDollarHex;
@@ -750,8 +753,8 @@ Help for 'merge" verb:
             _Progress.Report(new TaskProgress(String.Format("Splitting '{0}'...", ch.NameForProgress), false, taskKey));
             var sw = Stopwatch.StartNew();
 
-            var reader = new PlainRaw(_CancelToken, _Conf.LineBufferSize, _Conf.ReadBufferSize);
-            foreach (var line in reader.ReadAll(ch.FullPath, ch.StartOffset, ch.EndOffset))
+            var reader = new PlainRaw(_CancelToken, _Conf.ReadBufferSize);
+            foreach (var line in reader.ReadAll(buffer, ch.FullPath, ch.StartOffset, ch.EndOffset))
             {
                 // Additional processing happens here.
 

@@ -205,8 +205,9 @@ TODO
             _Progress.Report(new TaskProgress(String.Format("Analysing '{0}'...", ch.NameForProgress), false, taskKey));
             var sw = Stopwatch.StartNew();
 
-            var reader = new PlainRaw(_CancelToken, _Conf.LineBufferSize, _Conf.ReadBufferSize);
-            foreach (var line in reader.ReadAll(ch.FullPath, ch.StartOffset, ch.EndOffset))
+            var buffer = new byte[_Conf.LineBufferSize];
+            var reader = new PlainRaw(_CancelToken, _Conf.ReadBufferSize);
+            foreach (var line in reader.ReadAll(buffer, ch.FullPath, ch.StartOffset, ch.EndOffset))
             {
                 acc.AddOneByLength(line.Length);
                 acc.AddOneToCategoryMasks(line);
