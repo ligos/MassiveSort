@@ -40,6 +40,7 @@ namespace MurrayGrant.MassiveSort.Actions
             this.TempFolder = Path.Combine(Helpers.GetBaseTempFolder(), pid.ToString());        // Temp folder is specific to process id, so we can run in parallel.
 
             this.MaxSortSize = 64 * 1024 * 1024;            // Largest size of files to sort in one chunk.
+            this.SlabSize = 4 * 1024 * 1024;                // Size of each slab in the SlabArray.
             this.ReadBufferSize = 64 * 1024;                // Buffer size to use when reading files.
             this.LineBufferSize = 64 * 1024;                // Buffer size to use when reading lines (also max line length).
             this.TempFileBufferSize = 128 * 1024;           // Buffer size to use when writing temp files.
@@ -103,7 +104,14 @@ Help for 'merge" verb:
                    - Dictionary: natural dictionary order (default)
                    - Length: length first, then dictionary order
 --max-sort-size    Largest chunk of files to sort as a group
-                   Default: 64MB, major contributor to memory usage
+                   Major contributor to memory usage
+                   Default: 64MB, Min: 256KB
+                   Max: 63TB (with max --slab-size of 1GB)
+                   Max: 255GB (with default --slab-size of 4MB)
+--slab-size        Memory allocations are made in chunks of this size
+                   Increasing this allows larger --max-sort-size
+                   Must be a power of 2
+                   Default: 4MB, Min: 256KB, Max: 1GB
 --sort-algorithm   Sort agorithm to use, options:
                    - DefaultArray: Array.Sort()
                    - LinqOrderBy: Enumerable.OrderBy()
@@ -160,7 +168,10 @@ Help for 'merge" verb:
 
         [Option("max-sort-size")]
         public string MaxSortSize_Raw { get; set; }
-        public int MaxSortSize { get; set; }
+        public long MaxSortSize { get; set; }
+        [Option("slab-size")]
+        public string SlabSize_Raw { get; set; }
+        public int SlabSize { get; set; }
         [Option("line-buffer-size")]
         public string LineBufferSize_Raw { get; set; }
         public int LineBufferSize { get; set; }
@@ -313,16 +324,9 @@ Help for 'merge" verb:
         {
             long size;
             if (!String.IsNullOrEmpty(this.MaxSortSize_Raw) && Helpers.TryParseByteSized(this.MaxSortSize_Raw, out size))
-            {
-                // 2GB is slightly smaller than 2GB, because dotnet arrays can only cope with int32 elements.
-                if (size <= 2L * 1024 * 1024 * 1024
-                    && size > (2L * 1024 * 1024 * 1024) - (1024 * 1024))
-                    MaxSortSize = Int32.MaxValue - (1024 * 1024);
-                else if (size > Int32.MaxValue)
-                    MaxSortSize = Int32.MaxValue;
-                else
-                    MaxSortSize = (int)size;
-            }
+                MaxSortSize = size;
+            if (!String.IsNullOrEmpty(this.SlabSize_Raw) && Helpers.TryParseByteSized(this.SlabSize_Raw, out size))
+                SlabSize = (int)size;
             if (!String.IsNullOrEmpty(this.LineBufferSize_Raw) && Helpers.TryParseByteSized(this.LineBufferSize_Raw, out size))
                 LineBufferSize = (int)size;
             if (!String.IsNullOrEmpty(this.ReadBufferSize_Raw) && Helpers.TryParseByteSized(this.ReadBufferSize_Raw, out size))
@@ -359,6 +363,8 @@ Help for 'merge" verb:
             long size;
             if (!String.IsNullOrEmpty(this.MaxSortSize_Raw) && !Helpers.TryParseByteSized(this.MaxSortSize_Raw, out size))
                 result.Append("'max-sort-size' cannot be parsed.");
+            if (!String.IsNullOrEmpty(this.SlabSize_Raw) && !Helpers.TryParseByteSized(this.SlabSize_Raw, out size))
+                result.Append("'slab-size' cannot be parsed.");
             if (!String.IsNullOrEmpty(this.LineBufferSize_Raw) && !Helpers.TryParseByteSized(this.LineBufferSize_Raw, out size))
                 result.Append("'line-buffer-size' cannot be parsed.");
             if (!String.IsNullOrEmpty(this.ReadBufferSize_Raw) && !Helpers.TryParseByteSized(this.ReadBufferSize_Raw, out size))
@@ -377,10 +383,19 @@ Help for 'merge" verb:
                 result.AppendLine("'shard-count' must be between 1 and 128.");
 
             // Other sanity checks.
+            if (SlabSize < 1024 * 256)
+                result.AppendLine("'slab-size' must be at least 256KB.");
+            if (SlabSize > 1024 * 1024 * 1024)
+                result.AppendLine("'slab-size' must be less than 1GB.");
+            if (!IsPowerOfTwo(SlabSize))
+                result.AppendLine("'slab-size' must be a power of 2.");
+
             if (MaxSortSize < 1024 * 256)
                 result.AppendLine("'max-sort-size' must be at least 256KB.");
-            if (MaxSortSize == Int32.MaxValue)
-                result.AppendLine("'max-sort-size' must be less than 2GB.");
+            if (MaxSortSize > 64L * 1024 * 1024 * 1024 * 1024)
+                result.AppendLine("'max-sort-size' must be less than 64TB.");
+            if (MaxSortSize > (long)SlabSize * 65532L)  // 4 slabs are reserved as overhead, because we might not be able to fill them to capacity
+                result.AppendLine("'max-sort-size' must be less than 'slab-size' * 65532.");
 
             if (LineBufferSize < 1024)
                 result.AppendLine("'line-buffer-size' must be at least 1KB.");
@@ -412,6 +427,19 @@ Help for 'merge" verb:
             return result.ToString();
         }
         public bool IsValid { get { return String.IsNullOrEmpty(GetValidationMessage()); } }
+
+        bool IsPowerOfTwo(int x)
+        {
+            int result = x, remainder;
+            do
+            {
+                (result, remainder) = Math.DivRem(result, 2);
+                if (result == 0)
+                    return true;
+            } while (remainder == 0);
+
+            return false;
+        }
     }
     #endregion
 
