@@ -70,7 +70,7 @@ namespace MurrayGrant.MassiveSort.Actions
 
         public static string GetUsageText()
         {
-            return 
+            return
 """
 Help for 'merge" verb:
 
@@ -1038,6 +1038,7 @@ Help for 'merge" verb:
                         // Read the files for the chunk into a single array for sorting.
                         // PERF: this represents ~5% of the time in this loop.
                         var readSw = Stopwatch.StartNew();
+                        var (_, _) = this.ReadFilesAndFindWordsForSorting(c.chunkNum, c.files);
                         var chunkData = this.ReadFilesForSorting(c.chunkNum, c.files);           // This allocates a large byte[].
                         var offsets = this.FindLineBoundariesForSorting(c.chunkNum, chunkData, c.files);     // PERF: this is ~8%. This allocates a large Int64[].
                         var linesRead = offsets.Length;
@@ -1230,18 +1231,22 @@ Help for 'merge" verb:
         {
             var sw = Stopwatch.StartNew();
             var cumulativeSize = 0L;
+            var cumulativeLines = 0;
             var sortChunks = new List<IEnumerable<FileResult>>();
             var chunk = new List<FileResult>();
             foreach (var fi in toSort)
             {
-                if (cumulativeSize + fi.Length > _Conf.MaxSortSize)
+                if (cumulativeSize + fi.Length > _Conf.MaxSortSize
+                    || cumulativeLines + fi.Lines > Int32.MaxValue)    // TODO: a LargeArray with Int64 indexer is required 
                 {
                     sortChunks.Add(chunk);
                     chunk = new List<FileResult>();
                     cumulativeSize = 0L;
+                    cumulativeLines = 0;
                 }
                 chunk.Add(fi);
                 cumulativeSize += fi.Length;
+                cumulativeLines += (int)fi.Lines;
             }
             sortChunks.Add(chunk);
             sortChunks.RemoveAll(x => !x.Any());  // Empty sort chunks might exist because some files are larger than MaxSortSize
@@ -1269,6 +1274,85 @@ Help for 'merge" verb:
             }
         }
 
+        private (SlabArray data, SlabIndex[] lines) ReadFilesAndFindWordsForSorting(int chunkNum, IEnumerable<FileResult> fs)
+        {
+            // Read each file in slab sized chunks, and scan for line boundaries for sorting.
+            // Because we've processed all incoming files, we know there will be a single new line character after each line.
+            // PERF: this could be done in parallel, but is unlikely to help as this is IO dominated and doing a sequential read anyway.
+            // PERF: this could be interleaved with IO and CPU work happening at the same time.
+            var sw = Stopwatch.StartNew();
+            var data = new SlabArray();
+            var lines = new SlabIndex[fs.Sum(x => x.Lines)];  // TODO: a LargeArray with Int64 indexer is required.
+            ushort slabNumber = 0;
+            int lineIdx = 0;
+
+            var slab = _MemoryPool.Rent(_Conf.SlabSize);
+            var span = slab.Memory.Span;
+
+            foreach (var f in fs)
+            {
+                using (var stream = new FileStream(f.FullPath, FileMode.Open, FileAccess.Read, FileShare.None))
+                {
+                    int bytesRead;
+                    while ((bytesRead = stream.Read(span)) != 0)
+                    {
+                        // Find word boundaries and create SlabIndexes for each.
+                        int startIdx = 0;
+                        for (int i = 0; i < bytesRead; i++)
+                        {
+                            if (span[i] == Constants.NewLineAsByte)
+                            {
+                                var line = new SlabIndex(slabNumber, startIdx, i - startIdx);
+                                lines[lineIdx] = line;
+
+                                startIdx += line.Length + 1;  // There is always one newline, because previous steps removed duplicates.
+                                ++lineIdx;
+                            }
+                        }
+
+                        // The last word might not fit entirely in the slab.
+                        // If so, we rewind a little and keep reading.
+                        var lastLineIsPartial = span[bytesRead-1] != Constants.NewLineAsByte;
+                        if (lastLineIsPartial)
+                        {
+                            int c = 0;
+                            for (int i = bytesRead - 1; i >= 0 && span[i] != Constants.NewLineAsByte; --i)
+                            {
+                                ++c;
+                                span[i] = 0;  // Zero out "unused" bytes at the end, so its obvious where usable data ends.
+                            }
+
+                            stream.Position -= c;
+                            startIdx -= c;
+                        }
+
+                        var reachedEndOfSlab = startIdx >= span.Length || startIdx <= 0;
+                        if (reachedEndOfSlab)
+                        {
+                            // If we are at the end of a slab, add it to the larger data collection, and allocate a new one.
+                            data.AddSlab(slab);
+                            
+                            slab = _MemoryPool.Rent(_Conf.SlabSize);
+                            span = slab.Memory.Span;
+                        }
+                        else
+                        {
+                            // Otherwise, trim down the span to read a bit more (possibly from the next file).
+                            span = span.Slice(startIdx);
+                        }
+                    }
+                }
+            }
+ 
+            // Don't forget the last slab!
+            for (int i = span.Length - 1; i >= 0 && span[i] != Constants.NewLineAsByte; --i)
+                span[i] = 0;  // Zero out "unused" bytes at the end, so its obvious where usable data ends.
+            data.AddSlab(slab);
+
+            sw.Stop();
+            this.WriteStats($"  Chunk #{chunkNum}: Read {fs.Count():N0} file(s) {fs.Sum(x => x.Length) / oneMbAsDouble:N1}MB, into {data.SlabCount:N0} slab(s), and found {lines.Length:N0} lines in {sw.Elapsed.TotalMilliseconds:N1}ms.");
+            return (data, lines);
+        }
         private byte[] ReadFilesForSorting(int chunkNum, IEnumerable<FileResult> fs)
         {
             // Read each file in one hit.
