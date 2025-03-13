@@ -15,6 +15,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -68,6 +69,58 @@ namespace MurrayGrant.MassiveSort.Comparers
             for (int i = 0; i < first.Length; i++)
             {
                 cmp = data[first.Offset + i].CompareTo(data[second.Offset + i]);
+                // Finish early if we find a difference.
+                if (cmp != 0)
+                    return cmp;
+            }
+            // Arrays are equal.
+            return 0;
+        }
+    }
+
+    internal class ClrSlabLengthComparer(SlabArray data) : IComparer<SlabIndex>, IEqualityComparer<SlabIndex>
+    {
+        private readonly SlabArray _Data = data;
+
+        public bool Equals(SlabIndex first, SlabIndex second)
+        {
+            if (first.Equals(second))
+                return true;
+            if (first.Length != second.Length)
+                return false;
+
+            var span1 = this._Data.GetSpan(first);
+            var span2 = this._Data.GetSpan(second);
+            if (span1.Length != span2.Length)
+                return false;
+            for (int i = 0; i < span1.Length; i++)
+            {
+                if (span1[i] != span2[i])
+                    return false;
+            }
+            return true;
+        }
+
+        public int GetHashCode(SlabIndex x)
+        {
+            return x.GetHashCode();
+        }
+
+        public int Compare(SlabIndex first, SlabIndex second)
+        {
+            // PERF: this is the hot method when sorting.
+            var span1 = this._Data.GetSpan(first);
+            var span2 = this._Data.GetSpan(second);
+
+            var cmp = span1.Length.CompareTo(span2.Length);
+            if (cmp != 0)
+                // Different length: just return the difference between lengths.
+                return cmp;
+            // Same length compares actual bytes.
+            Debug.Assert(span1.Length == span2.Length);
+            for (int i = 0; i < span1.Length; i++)
+            {
+                cmp = span1[i].CompareTo(span2[i]);
                 // Finish early if we find a difference.
                 if (cmp != 0)
                     return cmp;

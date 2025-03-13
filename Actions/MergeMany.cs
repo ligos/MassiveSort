@@ -1038,7 +1038,7 @@ Help for 'merge" verb:
                         // Read the files for the chunk into a single array for sorting.
                         // PERF: this represents ~5% of the time in this loop.
                         var readSw = Stopwatch.StartNew();
-                        var (_, _) = this.ReadFilesAndFindWordsForSorting(c.chunkNum, c.files);
+                        var (slabData, slabIndexes) = this.ReadFilesAndFindWordsForSorting(c.chunkNum, c.files);
                         var chunkData = this.ReadFilesForSorting(c.chunkNum, c.files);           // This allocates a large byte[].
                         var offsets = this.FindLineBoundariesForSorting(c.chunkNum, chunkData, c.files);     // PERF: this is ~8%. This allocates a large Int64[].
                         var linesRead = offsets.Length;
@@ -1050,7 +1050,9 @@ Help for 'merge" verb:
                         // PERF: it's not entirely obvious from the trace, but a significant part of that time is in the comparer.
                         var sortSw = Stopwatch.StartNew();
                         var comparer = this.GetOffsetComparer(chunkData);
+                        var slabComparer = this.GetOffsetComparer(slabData);
                         offsets = this.SortLines(c.chunkNum, chunkData, offsets, comparer);
+                        slabIndexes = this.SortLines(c.chunkNum, slabData, slabIndexes, slabComparer);
                         sortSw.Stop();
                         if (_CancelToken.IsCancellationRequested) return null;
 
@@ -1273,7 +1275,13 @@ Help for 'merge" verb:
                     throw new Exception("Unknown comparer: " + _Conf.SortOrder);
             }
         }
-
+        private IComparer<SlabIndex> GetOffsetComparer(SlabArray data)
+            => _Conf.SortOrder switch
+            {
+                MergeConf.SortOrders.Dictionary => new Comparers.ClrSlabDictionaryComparer(data),
+                MergeConf.SortOrders.Length => new Comparers.ClrSlabLengthComparer(data),
+                _ => throw new Exception("Unknown comparer: " + _Conf.SortOrder),
+            };
         private (SlabArray data, SlabIndex[] lines) ReadFilesAndFindWordsForSorting(int chunkNum, IEnumerable<FileResult> fs)
         {
             // Read each file in slab sized chunks, and scan for line boundaries for sorting.
@@ -1420,6 +1428,21 @@ Help for 'merge" verb:
             this.WriteStats($"  Chunk #{chunkNum}: Sorted {offsets.Length:N0} lines ({chunkData.Length / oneMbAsDouble:N1}MB) in {sw.Elapsed.TotalMilliseconds:N1}ms.");
             return offsets;
         }
+        private SlabIndex[] SortLines(int chunkNum, SlabArray data, SlabIndex[] offsets, IComparer<SlabIndex> comparer)
+        {
+            var sw = Stopwatch.StartNew();
+            if (_Conf.SortAlgorithm == MergeConf.SortAlgorithms.Auto || _Conf.SortAlgorithm == MergeConf.SortAlgorithms.DefaultArray)
+                Array.Sort(offsets, comparer);
+            else if (_Conf.SortAlgorithm == MergeConf.SortAlgorithms.LinqOrderBy)
+                offsets = offsets.OrderBy(x => x, comparer).ToArray();
+            else if (_Conf.SortAlgorithm == MergeConf.SortAlgorithms.TimSort)
+                offsets.TimSort(comparer.Compare);
+            else
+                throw new Exception("Unknown sort algorithm: " + _Conf.SortAlgorithm);
+            sw.Stop();
+            this.WriteStats($"  Chunk #{chunkNum}: Sorted {offsets.Length:N0} lines ({data.Length / oneMbAsDouble:N1}MB) in {sw.Elapsed.TotalMilliseconds:N1}ms.");
+            return offsets;
+        }
 
         private (OffsetAndLength[] uniques, OffsetAndLength[] duplicates) DeDupe(int chunkNum, byte[] chunkData, OffsetAndLength[] offsets, IEqualityComparer<OffsetAndLength> comparer)
         {
@@ -1465,6 +1488,10 @@ Help for 'merge" verb:
             sw.Stop();
             this.WriteStats($"  Chunk #{chunkNum}: De-duplicated {offsets.Length:N0} lines(s), {chunkData.Length / oneMbAsDouble:N1}MB in {sw.Elapsed.TotalMilliseconds:N1}ms. {uniques.Count:N0} line(s) remain, {offsets.Length - uniques.Count:N0} duplicates removed.");
             return result;
+        }
+        private (SlabIndex[] uniques, SlabIndex[] duplicates) DeDupe(int chunkNum, SlabArray data, SlabIndex[] offsets, IEqualityComparer<SlabIndex> comparer)
+        {
+            throw new NotImplementedException();
         }
 
         private long WriteToFile(IndexedFileData data, FileStream output, IndexedFileData duplicates, FileStream duplicateOutput)

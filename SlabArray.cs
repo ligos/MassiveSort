@@ -11,6 +11,7 @@ namespace MurrayGrant.MassiveSort
     internal sealed class SlabArray : IDisposable
     {
         readonly List<IMemoryOwner<byte>> _Slabs = new List<IMemoryOwner<byte>>();
+        readonly List<ReadOnlyMemory<byte>> _Memories = new List<ReadOnlyMemory<byte>>();
 
         public ushort SlabCount => (ushort)_Slabs.Count;
         public long Length => _Slabs.Sum(x => (long)x.Memory.Length);
@@ -18,13 +19,14 @@ namespace MurrayGrant.MassiveSort
         public void AddSlab(IMemoryOwner<byte> slab)
         {
             _Slabs.Add(slab);
+            _Memories.Add(slab.Memory);
         }
 
         public ReadOnlySpan<byte> GetSpan(SlabIndex idx)
-            => _Slabs[idx.SlabNumber].Memory.Span.Slice(idx.Offset, idx.Length);
+            => _Memories[idx.SlabNumber].Span.Slice(idx.Offset, idx.Length);
 
         public ReadOnlyMemory<byte> GetMemory(SlabIndex idx)
-            => _Slabs[idx.SlabNumber].Memory.Slice(idx.Offset, idx.Length);
+            => _Memories[idx.SlabNumber].Slice(idx.Offset, idx.Length);
 
         public void Dispose()
         {
