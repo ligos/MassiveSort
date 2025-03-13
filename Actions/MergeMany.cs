@@ -1060,6 +1060,7 @@ Help for 'merge" verb:
                         // PERF: this represents ~10% of the time in this loop.
                         var deDupeSw = Stopwatch.StartNew();
                         var deDupTuple = this.DeDupe(c.chunkNum, chunkData, offsets, (IEqualityComparer<OffsetAndLength>)comparer);
+                        var (chunkUniques, chunkDuplicates) = this.DeDupe(c.chunkNum, slabData, slabIndexes, (IEqualityComparer<SlabIndex>)slabComparer);
                         var data = new IndexedFileData(chunkData, deDupTuple.uniques);
                         var duplicates = new IndexedFileData(chunkData, deDupTuple.duplicates);
                         deDupeSw.Stop();
@@ -1430,6 +1431,7 @@ Help for 'merge" verb:
         }
         private SlabIndex[] SortLines(int chunkNum, SlabArray data, SlabIndex[] offsets, IComparer<SlabIndex> comparer)
         {
+            // TODO: Slabs are about 2.5x as slow as previous sorting. Dig into the performance further.
             var sw = Stopwatch.StartNew();
             if (_Conf.SortAlgorithm == MergeConf.SortAlgorithms.Auto || _Conf.SortAlgorithm == MergeConf.SortAlgorithms.DefaultArray)
                 Array.Sort(offsets, comparer);
@@ -1491,7 +1493,48 @@ Help for 'merge" verb:
         }
         private (SlabIndex[] uniques, SlabIndex[] duplicates) DeDupe(int chunkNum, SlabArray data, SlabIndex[] offsets, IEqualityComparer<SlabIndex> comparer)
         {
-            throw new NotImplementedException();
+            var sw = Stopwatch.StartNew();
+
+            var uniques = new List<SlabIndex>(offsets.Length);
+            var dups = _Conf.SaveDuplicates ? new List<SlabIndex>(offsets.Length / 4) : null;
+
+            bool saveDuplicates = _Conf.SaveDuplicates;
+            bool leaveDuplicates = _Conf.LeaveDuplicates;
+
+            // Nothing needs to be done!
+            if (leaveDuplicates && !saveDuplicates)
+                return (offsets, null);
+
+            var previous = SlabIndex.Empty;
+            var lastDuplicate = SlabIndex.Empty;
+            for (int i = 0; i < offsets.Length; i++)
+            {
+                var current = offsets[i];
+                var isDuplicate = i > 0 && comparer.Equals(current, previous);
+
+                // Record unique lines.
+                if (leaveDuplicates || !isDuplicate)
+                    uniques.Add(current);
+
+                // Record duplicate lines.
+                if (isDuplicate && saveDuplicates)
+                {
+                    var isDuplicateDuplicate = comparer.Equals(current, lastDuplicate);
+                    if (!isDuplicateDuplicate)
+                    {
+                        dups.Add(current);
+                        lastDuplicate = current;
+                    }
+                }
+
+                previous = current;
+            }
+
+            var result = (uniques.ToArray(), dups?.ToArray());
+
+            sw.Stop();
+            this.WriteStats($"  Chunk #{chunkNum}: De-duplicated {offsets.Length:N0} lines(s), {data.Length / oneMbAsDouble:N1}MB in {sw.Elapsed.TotalMilliseconds:N1}ms. {uniques.Count:N0} line(s) remain, {offsets.Length - uniques.Count:N0} duplicates removed.");
+            return result;
         }
 
         private long WriteToFile(IndexedFileData data, FileStream output, IndexedFileData duplicates, FileStream duplicateOutput)

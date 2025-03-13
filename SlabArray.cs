@@ -30,6 +30,7 @@ namespace MurrayGrant.MassiveSort
 
         public void Dispose()
         {
+            _Memories.Clear();
             foreach (var s in _Slabs)
                 s.Dispose();
             _Slabs.Clear();
@@ -47,6 +48,8 @@ namespace MurrayGrant.MassiveSort
             _Length = (ushort)length;
             _Offset = (uint)offset + (((uint)length & 0x0001_0000u) << 15);
         }
+
+        public static SlabIndex Empty => new(0, 0, 0);
 
         readonly UInt16 _SlabNumber;
         // Top bit of Offset is added to Length. So there are 17 bits of Length and 31 bits of Offset.
