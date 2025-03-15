@@ -1341,8 +1341,6 @@ Help for 'merge" verb:
                             for (int i = bytesRead - 1; i >= 0 && span[i] != Constants.NewLineAsByte; --i)
                             {
                                 --stream.Position;
-                                //--readIdx;
-                                //--slabIdx;
                                 span[i] = 0;  // Zero out "unused" bytes at the end, so its obvious where usable data ends.
                             }
                         }
