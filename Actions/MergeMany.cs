@@ -1020,6 +1020,8 @@ Help for 'merge" verb:
             var flushSw = new Stopwatch();
             TimeSpan schedulerOverheadTime;
             using (var output = new FileStream(_Conf.OutputFile, FileMode.Create, FileAccess.Write, FileShare.None, _Conf.OutputBufferSize))
+            using (var slabDebugOutput = new FileStream(_Conf.OutputFile + ".slabdebug.txt", FileMode.Create, FileAccess.Write, FileShare.None, _Conf.OutputBufferSize))
+            using (var originalDebugOutput = new FileStream(_Conf.OutputFile + ".debug.txt", FileMode.Create, FileAccess.Write, FileShare.None, _Conf.OutputBufferSize))
             using (var duplicateOutput = _Conf.SaveDuplicates ? new FileStream(duplicatePath, FileMode.Create, FileAccess.Write, FileShare.None, _Conf.OutputBufferSize) : null)
             {
                 // Now sort each chunk.
@@ -1053,6 +1055,8 @@ Help for 'merge" verb:
                         var slabComparer = this.GetOffsetComparer(slabData);
                         offsets = this.SortLines(c.chunkNum, chunkData, offsets, comparer);
                         slabIndexes = this.SortLines(c.chunkNum, slabData, slabIndexes, slabComparer);
+                        this.WriteToFile(new IndexedFileData2(slabData, slabIndexes), slabDebugOutput, null, null);
+                        this.WriteToFile(new IndexedFileData(chunkData, offsets), originalDebugOutput, null, null);
                         sortSw.Stop();
                         if (_CancelToken.IsCancellationRequested) return null;
 
@@ -1304,6 +1308,7 @@ Help for 'merge" verb:
 
             var slab = _MemoryPool.Rent(_Conf.SlabSize);
             var span = slab.Memory.Span;
+            var slabIdx = 0;
 
             foreach (var f in fs)
             {
@@ -1313,15 +1318,17 @@ Help for 'merge" verb:
                     while ((bytesRead = stream.Read(span)) != 0)
                     {
                         // Find word boundaries and create SlabIndexes for each.
-                        int startIdx = 0;
+                        int readIdx = 0;
                         for (int i = 0; i < bytesRead; i++)
                         {
                             if (span[i] == Constants.NewLineAsByte)
                             {
-                                var line = new SlabIndex(slabNumber, startIdx, i - startIdx);
+                                var len = i - readIdx;
+                                var line = new SlabIndex(slabNumber, slabIdx, len);
                                 lines[lineIdx] = line;
 
-                                startIdx += line.Length + 1;  // There is always one newline, because previous steps removed duplicates.
+                                readIdx += len + 1;  // There is always one newline, because previous steps removed duplicates.
+                                slabIdx += len + 1;
                                 ++lineIdx;
                             }
                         }
@@ -1331,18 +1338,16 @@ Help for 'merge" verb:
                         var lastLineIsPartial = span[bytesRead-1] != Constants.NewLineAsByte;
                         if (lastLineIsPartial)
                         {
-                            int c = 0;
                             for (int i = bytesRead - 1; i >= 0 && span[i] != Constants.NewLineAsByte; --i)
                             {
-                                ++c;
+                                --stream.Position;
+                                //--readIdx;
+                                //--slabIdx;
                                 span[i] = 0;  // Zero out "unused" bytes at the end, so its obvious where usable data ends.
                             }
-
-                            stream.Position -= c;
-                            startIdx -= c;
                         }
 
-                        var reachedEndOfSlab = startIdx >= span.Length || startIdx <= 0;
+                        var reachedEndOfSlab = readIdx >= span.Length || readIdx <= 0;
                         if (reachedEndOfSlab)
                         {
                             // If we are at the end of a slab, add it to the larger data collection, and allocate a new one.
@@ -1350,11 +1355,13 @@ Help for 'merge" verb:
                             
                             slab = _MemoryPool.Rent(_Conf.SlabSize);
                             span = slab.Memory.Span;
+                            slabIdx = 0;
+                            ++slabNumber;
                         }
                         else
                         {
                             // Otherwise, trim down the span to read a bit more (possibly from the next file).
-                            span = span.Slice(startIdx);
+                            span = span[readIdx..];
                         }
                     }
                 }
@@ -1365,6 +1372,33 @@ Help for 'merge" verb:
                 span[i] = 0;  // Zero out "unused" bytes at the end, so its obvious where usable data ends.
             data.AddSlab(slab);
 
+#if DEBUG
+            // Sanity check the lines.
+            var lastSlab = 0;
+            var lastOffset = Int32.MinValue;
+            var expectedNextOffset = 0;
+            for (int i = 0; i < lines.Length; i++)
+            {
+                var l = lines[i];
+                if (lastSlab != l.SlabNumber)
+                {
+                    lastOffset = 0;
+                    expectedNextOffset = 0;
+                }
+
+                var lineSpan = data.GetSpan(l);
+                var lineAsUtf8String = Encoding.UTF8.GetString(lineSpan);
+
+                if (l.Offset != expectedNextOffset)
+                    throw new Exception("Postcondition failure: unexpected next offset");
+                if (lastOffset > l.Offset)
+                    throw new Exception("Postcondition failure: offset went backwards");
+
+                lastOffset = l.Offset;
+                expectedNextOffset = l.Offset + l.Length + 1;
+                lastSlab = l.SlabNumber;
+            }
+#endif
             sw.Stop();
             this.WriteStats($"  Chunk #{chunkNum}: Read {fs.Count():N0} file(s) {fs.Sum(x => x.Length) / oneMbAsDouble:N1}MB, into {data.SlabCount:N0} slab(s), and found {lines.Length:N0} lines in {sw.Elapsed.TotalMilliseconds:N1}ms.");
             return (data, lines);

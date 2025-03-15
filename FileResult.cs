@@ -41,5 +41,8 @@ namespace MurrayGrant.MassiveSort
         {
             return new FileResult(this.FullPath, this.Length, this.Lines + l);
         }
+
+        public override string ToString()
+            => $"{Name} ({Length / Constants.OneMbAsDouble:N1}MB) - Lines: {Lines:N0}";
     }
 }
