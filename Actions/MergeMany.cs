@@ -1055,8 +1055,6 @@ Help for 'merge" verb:
                         var slabComparer = this.GetOffsetComparer(slabData);
                         offsets = this.SortLines(c.chunkNum, chunkData, offsets, comparer);
                         slabIndexes = this.SortLines(c.chunkNum, slabData, slabIndexes, slabComparer);
-                        this.WriteToFile(new IndexedFileData2(slabData, slabIndexes), slabDebugOutput, null, null);
-                        this.WriteToFile(new IndexedFileData(chunkData, offsets), originalDebugOutput, null, null);
                         sortSw.Stop();
                         if (_CancelToken.IsCancellationRequested) return null;
 
