@@ -1063,6 +1063,8 @@ Help for 'merge" verb:
                         var (chunkUniques, chunkDuplicates) = this.DeDupe(c.chunkNum, slabData, slabIndexes, (IEqualityComparer<SlabIndex>)slabComparer);
                         var data = new IndexedFileData(chunkData, deDupTuple.uniques);
                         var duplicates = new IndexedFileData(chunkData, deDupTuple.duplicates);
+                        var sortedSlabData = new IndexedFileData2(slabData, chunkUniques);
+                        var sortedSlabDuplicates = new IndexedFileData2(slabData, chunkDuplicates);
                         deDupeSw.Stop();
 
                         _Progress.Report(new TaskProgress(" Sorted. ", false, taskKey));
@@ -1075,6 +1077,8 @@ Help for 'merge" verb:
                             linesRead,
                             data,
                             duplicates,
+                            sortedSlabData,
+                            sortedSlabDuplicates,
                             taskKey,
                             readTime = readSw.Elapsed,
                             sortTime = sortSw.Elapsed,
@@ -1088,7 +1092,8 @@ Help for 'merge" verb:
                         // Remove duplicates and write to disk.
                         // PERF: this represents ~10% of the time in this loop. It cannot be parallelised.
                         var writeSw = Stopwatch.StartNew();
-                        var linesWritten = this.WriteToFile(ch.data, output, ch.duplicates, duplicateOutput);
+                        //var linesWritten = this.WriteToFile(ch.data, output, ch.duplicates, duplicateOutput);
+                        var linesWritten = this.WriteToFile(ch.sortedSlabData, output, ch.sortedSlabDuplicates, duplicateOutput);
                         totalLinesWritten += linesWritten;
                         totalLinesRead += ch.linesRead;
                         writeSw.Stop();
@@ -1100,6 +1105,8 @@ Help for 'merge" verb:
                             ch.duplicates.Dispose();
                         if (_Conf.AggressiveMemoryCollection)
                             GC.Collect();
+                        ch.sortedSlabData?.Data?.Dispose();
+                        ch.sortedSlabDuplicates?.Data?.Dispose();
                         memoryCleanSw.Stop();
 
                         _Progress.Report(new TaskProgress(" Written.", true, ch.taskKey));
@@ -1561,6 +1568,36 @@ Help for 'merge" verb:
                 {
                     var current = offsets[i];
                     duplicateOutput.Write(chunkData, current.Offset, current.Length);
+                    duplicateOutput.WriteByte(Constants.NewLineAsByte);
+                }
+
+            }
+            return linesWritten;
+        }
+        private long WriteToFile(IndexedFileData2 data, FileStream output, IndexedFileData2 duplicates, FileStream duplicateOutput)
+        {
+            long linesWritten = 0L;
+
+            // Write unique lines.
+            var index = data.LineIndex;
+            for (int i = 0; i < index.Length; i++)
+            {
+                var current = index[i];
+                var span = data.Data.GetSpan(current);
+                output.Write(span);
+                output.WriteByte(Constants.NewLineAsByte);
+                linesWritten++;
+            }
+
+            // Write duplicate lines, if any.
+            if (_Conf.SaveDuplicates && duplicates != null && duplicateOutput != null)
+            {
+                index = data.LineIndex;
+                for (int i = 0; i < index.Length; i++)
+                {
+                    var current = index[i];
+                    var span = data.Data.GetSpan(current);
+                    duplicateOutput.Write(span);
                     duplicateOutput.WriteByte(Constants.NewLineAsByte);
                 }
 

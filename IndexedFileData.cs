@@ -28,4 +28,12 @@ namespace MurrayGrant.MassiveSort
             return String.Format("{0:N0} lines, {1:N1} MB", LineOffsets.Length, Chunk.Length / Constants.OneMbAsDouble);
         }
     }
+
+    public record class IndexedFileData2(SlabArray Data, SlabIndex[] LineIndex)
+    {
+        public override string ToString()
+        {
+            return String.Format("{0:N0} lines, {1:N1} MB", LineIndex.Length, Data.Length / Constants.OneMbAsDouble);
+        }
+    }
 }

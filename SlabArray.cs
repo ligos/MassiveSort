@@ -8,7 +8,7 @@ using System.Threading.Tasks;
 
 namespace MurrayGrant.MassiveSort
 {
-    internal sealed class SlabArray : IDisposable
+    public sealed class SlabArray : IDisposable
     {
         readonly List<IMemoryOwner<byte>> _Slabs = new List<IMemoryOwner<byte>>();
         readonly List<ReadOnlyMemory<byte>> _Memories = new List<ReadOnlyMemory<byte>>();
@@ -37,7 +37,7 @@ namespace MurrayGrant.MassiveSort
         }
     }
 
-    internal readonly struct SlabIndex : IEquatable<SlabIndex>
+    public readonly struct SlabIndex : IEquatable<SlabIndex>
     {
         public SlabIndex(ushort slabNumber, int offset, int length)
         {
