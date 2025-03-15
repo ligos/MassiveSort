@@ -1468,7 +1468,6 @@ Help for 'merge" verb:
         }
         private SlabIndex[] SortLines(int chunkNum, SlabArray data, SlabIndex[] offsets, IComparer<SlabIndex> comparer)
         {
-            // TODO: Slabs are about 2.5x as slow as previous sorting. Dig into the performance further.
             var sw = Stopwatch.StartNew();
             if (_Conf.SortAlgorithm == MergeConf.SortAlgorithms.Auto || _Conf.SortAlgorithm == MergeConf.SortAlgorithms.DefaultArray)
                 Array.Sort(offsets, comparer);
