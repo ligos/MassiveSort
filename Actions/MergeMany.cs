@@ -1020,8 +1020,6 @@ Help for 'merge" verb:
             var flushSw = new Stopwatch();
             TimeSpan schedulerOverheadTime;
             using (var output = new FileStream(_Conf.OutputFile, FileMode.Create, FileAccess.Write, FileShare.None, _Conf.OutputBufferSize))
-            using (var slabDebugOutput = new FileStream(_Conf.OutputFile + ".slabdebug.txt", FileMode.Create, FileAccess.Write, FileShare.None, _Conf.OutputBufferSize))
-            using (var originalDebugOutput = new FileStream(_Conf.OutputFile + ".debug.txt", FileMode.Create, FileAccess.Write, FileShare.None, _Conf.OutputBufferSize))
             using (var duplicateOutput = _Conf.SaveDuplicates ? new FileStream(duplicatePath, FileMode.Create, FileAccess.Write, FileShare.None, _Conf.OutputBufferSize) : null)
             {
                 // Now sort each chunk.
