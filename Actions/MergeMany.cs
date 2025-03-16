@@ -1037,36 +1037,28 @@ Help for 'merge" verb:
                         _Progress.Report(new TaskProgress(String.Format("Sorting chunk {0:N0} ({1} - {2})...", c.chunkNum, c.files.First().Name, c.files.Last().Name), false, taskKey));
                         this.WriteStats("  Chunk #{0}: Sorting with {3:N0} files ({1} - {2}: {4:N1}MB, {5:N0} lines)...", c.chunkNum, c.files.First().Name, c.files.Last().Name, c.files.Count(), c.files.Sum(x => x.Length) / oneMbAsDouble, c.files.Sum(x => x.Lines));
 
-                        // Read the files for the chunk into a single array for sorting.
-                        // PERF: this represents ~5% of the time in this loop.
+                        // Read the files for the chunk into an array for sorting.
+                        // PERF: this represents ~20% of the time in this loop.
                         var readSw = Stopwatch.StartNew();
-                        var (slabData, slabIndexes) = this.ReadFilesAndFindWordsForSorting(c.chunkNum, c.files);
-                        var chunkData = this.ReadFilesForSorting(c.chunkNum, c.files);           // This allocates a large byte[].
-                        var offsets = this.FindLineBoundariesForSorting(c.chunkNum, chunkData, c.files);     // PERF: this is ~8%. This allocates a large Int64[].
-                        var linesRead = offsets.Length;
+                        var (data, indexes, linesRead) = this.ReadFilesAndFindWordsForSorting(c.chunkNum, c.files);
                         readSw.Stop();
                         if (_CancelToken.IsCancellationRequested) return null;
 
                         // Actually sort them!
-                        // PERF: this represents ~80% of the time in this loop.
+                        // PERF: this represents ~75% of the time in this loop.
                         // PERF: it's not entirely obvious from the trace, but a significant part of that time is in the comparer.
                         var sortSw = Stopwatch.StartNew();
-                        var comparer = this.GetOffsetComparer(chunkData);
-                        var slabComparer = this.GetOffsetComparer(slabData);
-                        offsets = this.SortLines(c.chunkNum, chunkData, offsets, comparer);
-                        slabIndexes = this.SortLines(c.chunkNum, slabData, slabIndexes, slabComparer);
+                        var comparer = this.GetOffsetComparer(data);
+                        indexes = this.SortLines(c.chunkNum, data, indexes, comparer);
                         sortSw.Stop();
                         if (_CancelToken.IsCancellationRequested) return null;
 
                         // Filter the sorted data to exclude duplicates.
-                        // PERF: this represents ~10% of the time in this loop.
+                        // PERF: this represents ~5% of the time in this loop.
                         var deDupeSw = Stopwatch.StartNew();
-                        var deDupTuple = this.DeDupe(c.chunkNum, chunkData, offsets, (IEqualityComparer<OffsetAndLength>)comparer);
-                        var (chunkUniques, chunkDuplicates) = this.DeDupe(c.chunkNum, slabData, slabIndexes, (IEqualityComparer<SlabIndex>)slabComparer);
-                        var data = new IndexedFileData(chunkData, deDupTuple.uniques);
-                        var duplicates = new IndexedFileData(chunkData, deDupTuple.duplicates);
-                        var sortedSlabData = new IndexedFileData2(slabData, chunkUniques);
-                        var sortedSlabDuplicates = new IndexedFileData2(slabData, chunkDuplicates);
+                        var (uniqueIndex, duplicateIndex) = this.DeDupe(c.chunkNum, data, indexes, (IEqualityComparer<SlabIndex>)comparer);
+                        var sortedUniques = new IndexedFileData(data, uniqueIndex);
+                        var duplicates = new IndexedFileData(data, duplicateIndex);
                         deDupeSw.Stop();
 
                         _Progress.Report(new TaskProgress(" Sorted. ", false, taskKey));
@@ -1077,10 +1069,8 @@ Help for 'merge" verb:
                             ch = c.chunkNum,
                             chNum = c.chunkNum,
                             linesRead,
-                            data,
+                            sortedUniques,
                             duplicates,
-                            sortedSlabData,
-                            sortedSlabDuplicates,
                             taskKey,
                             readTime = readSw.Elapsed,
                             sortTime = sortSw.Elapsed,
@@ -1092,23 +1082,19 @@ Help for 'merge" verb:
                         this.WriteStats("Chunk #{0}: On sequential write thread.", ch.chNum);
 
                         // Remove duplicates and write to disk.
-                        // PERF: this represents ~10% of the time in this loop. It cannot be parallelised.
+                        // PERF: this represents ~5% of the time in this loop. It cannot be parallelised.
                         var writeSw = Stopwatch.StartNew();
-                        //var linesWritten = this.WriteToFile(ch.data, output, ch.duplicates, duplicateOutput);
-                        var linesWritten = this.WriteToFile(ch.sortedSlabData, output, ch.sortedSlabDuplicates, duplicateOutput);
+                        var linesWritten = this.WriteToFile(ch.sortedUniques, output, ch.duplicates, duplicateOutput);
                         totalLinesWritten += linesWritten;
                         totalLinesRead += ch.linesRead;
                         writeSw.Stop();
 
-                        // Release references to the large arrays allocated when reading files.
+                        // Return references to the large arrays to the memory / array pool.
                         var memoryCleanSw = Stopwatch.StartNew();
-                        ch.data.Dispose();
-                        if (ch.duplicates != null)
-                            ch.duplicates.Dispose();
+                        ch.sortedUniques.Dispose();
+                        ch.duplicates.Dispose();
                         if (_Conf.AggressiveMemoryCollection)
                             GC.Collect();
-                        ch.sortedSlabData?.Data?.Dispose();
-                        ch.sortedSlabDuplicates?.Data?.Dispose();
                         memoryCleanSw.Stop();
 
                         _Progress.Report(new TaskProgress(" Written.", true, ch.taskKey));
@@ -1273,18 +1259,6 @@ Help for 'merge" verb:
             return sortChunks;
         }
 
-        private IComparer<OffsetAndLength> GetOffsetComparer(byte[] data)
-        {
-            switch (_Conf.SortOrder)
-            {
-                case MergeConf.SortOrders.Dictionary:
-                    return new Comparers.ClrOffsetDictionaryComparer(data);
-                case MergeConf.SortOrders.Length:
-                    return new Comparers.ClrOffsetLengthComparer(data);
-                default:
-                    throw new Exception("Unknown comparer: " + _Conf.SortOrder);
-            }
-        }
         private IComparer<SlabIndex> GetOffsetComparer(SlabArray data)
             => _Conf.SortOrder switch
             {
@@ -1292,7 +1266,8 @@ Help for 'merge" verb:
                 MergeConf.SortOrders.Length => new Comparers.ClrSlabLengthComparer(data),
                 _ => throw new Exception("Unknown comparer: " + _Conf.SortOrder),
             };
-        private (SlabArray data, SlabIndex[] lines) ReadFilesAndFindWordsForSorting(int chunkNum, IEnumerable<FileResult> fs)
+
+        private (SlabArray data, SlabIndex[] lines, int linesRead) ReadFilesAndFindWordsForSorting(int chunkNum, IEnumerable<FileResult> fs)
         {
             // Read each file in slab sized chunks, and scan for line boundaries for sorting.
             // Because we've processed all incoming files, we know there will be a single new line character after each line.
@@ -1396,76 +1371,11 @@ Help for 'merge" verb:
             }
 #endif
             sw.Stop();
-            this.WriteStats($"  Chunk #{chunkNum}: Read {fs.Count():N0} file(s) {fs.Sum(x => x.Length) / oneMbAsDouble:N1}MB, into {data.SlabCount:N0} slab(s), and found {lines.Length:N0} lines in {sw.Elapsed.TotalMilliseconds:N1}ms.");
-            return (data, lines);
-        }
-        private byte[] ReadFilesForSorting(int chunkNum, IEnumerable<FileResult> fs)
-        {
-            // Read each file in one hit.
-            // PERF: this could be done in parallel, but is unlikely to help as this is IO dominated and doing a sequential read anyway.
-            var sw = Stopwatch.StartNew();
-            // TODO: replace this big allocation with something that can support Int64 bytes!
-            //MemoryPool<byte>.Shared.Rent()
-            var data = new byte[(int)fs.Sum(x => x.Length)];
-            {
-                int offset = 0;
-                foreach (var f in fs)
-                {
-                    using (var stream = new FileStream(f.FullPath, FileMode.Open, FileAccess.Read, FileShare.None))
-                    {
-                        stream.Read(data, offset, (int)f.Length);
-                    }
-                    offset += (int)f.Length;
-                }
-            }
-            sw.Stop();
-            this.WriteStats($"  Chunk #{chunkNum}: Read {fs.Count():N0} file(s) {fs.Sum(x => x.Length) / oneMbAsDouble:N1}MB in {sw.Elapsed.TotalMilliseconds:N1}ms.");
-            return data;
-        }
-        private OffsetAndLength[] FindLineBoundariesForSorting(int chunkNum, byte[] data, IEnumerable<FileResult> fs)
-        {
-            // Create an index into the files based on new lines.
-            // Because we've processed all incoming files, we know there will be a single new line character after each line.
-            // PERF: this could be done in parallel once we align to the start of words.
-            var sw = Stopwatch.StartNew();
-            var offsets = new OffsetAndLength[fs.Sum(x => x.Lines)];
-            int offset = 0;
-            int start = 0;
-            int end = 0;
-            for (int i = 0; i < data.Length; i++)
-            {
-                if (data[i] == Constants.NewLine)
-                {
-                    offsets[offset] = new OffsetAndLength(start, end - start);
-                    offset++;
-                    start = end + 1;
-                    end = i + 1;
-                }
-                else
-                {
-                    end++;
-                }
-            }
-            sw.Stop();
-            this.WriteStats($"  Chunk #{chunkNum}: Found {offsets.Length:N0} lines in {sw.Elapsed.TotalMilliseconds:N1}ms.");
-            return offsets;
+            this.WriteStats($"  Chunk #{chunkNum}: Read {fs.Count():N0} file(s) {fs.Sum(x => x.Length) / oneMbAsDouble:N1}MB, into {data.SlabCount:N0} slab(s), and found {lineIdx + 1:N0} lines in {sw.Elapsed.TotalMilliseconds:N1}ms.");
+            return (data, lines, lineIdx + 1);
         }
 
-        private OffsetAndLength[] SortLines(int chunkNum, byte[] chunkData, OffsetAndLength[] offsets, IComparer<OffsetAndLength> comparer)
-        {
-            var sw = Stopwatch.StartNew();
-            if (_Conf.SortAlgorithm == MergeConf.SortAlgorithms.Auto || _Conf.SortAlgorithm == MergeConf.SortAlgorithms.DefaultArray)
-                Array.Sort(offsets, comparer);
-            else if (_Conf.SortAlgorithm == MergeConf.SortAlgorithms.LinqOrderBy)
-                offsets = offsets.OrderBy(x => x, comparer).ToArray();
-            else if (_Conf.SortAlgorithm == MergeConf.SortAlgorithms.TimSort)
-                offsets.TimSort(comparer.Compare);
-            else
-                throw new Exception("Unknown sort algorithm: " + _Conf.SortAlgorithm);
-            sw.Stop();
-            this.WriteStats($"  Chunk #{chunkNum}: Sorted {offsets.Length:N0} lines ({chunkData.Length / oneMbAsDouble:N1}MB) in {sw.Elapsed.TotalMilliseconds:N1}ms.");
-            return offsets;
-        }
+
         private SlabIndex[] SortLines(int chunkNum, SlabArray data, SlabIndex[] offsets, IComparer<SlabIndex> comparer)
         {
             var sw = Stopwatch.StartNew();
@@ -1482,51 +1392,6 @@ Help for 'merge" verb:
             return offsets;
         }
 
-        private (OffsetAndLength[] uniques, OffsetAndLength[] duplicates) DeDupe(int chunkNum, byte[] chunkData, OffsetAndLength[] offsets, IEqualityComparer<OffsetAndLength> comparer)
-        {
-            var sw = Stopwatch.StartNew();
-
-            var uniques = new List<OffsetAndLength>(offsets.Length);
-            var dups = _Conf.SaveDuplicates ? new List<OffsetAndLength>(offsets.Length / 4) : null;
-
-            bool saveDuplicates = _Conf.SaveDuplicates;
-            bool leaveDuplicates = _Conf.LeaveDuplicates;
-
-            // Nothing needs to be done!
-            if (leaveDuplicates && !saveDuplicates)
-                return (offsets, null);
-
-            var previous = OffsetAndLength.Empty;
-            var lastDuplicate = OffsetAndLength.Empty;
-            for (int i = 0; i < offsets.Length; i++)
-            {
-                var current = offsets[i];
-                var isDuplicate = i > 0 && comparer.Equals(current, previous);
-
-                // Record unique lines.
-                if (leaveDuplicates || !isDuplicate)
-                    uniques.Add(current);
-
-                // Record duplicate lines.
-                if (isDuplicate && saveDuplicates)
-                {
-                    var isDuplicateDuplicate = comparer.Equals(current, lastDuplicate);
-                    if (!isDuplicateDuplicate)
-                    {
-                        dups.Add(current);
-                        lastDuplicate = current;
-                    }
-                }
-
-                previous = current;
-            }
-
-            var result = (uniques.ToArray(), dups?.ToArray());
-
-            sw.Stop();
-            this.WriteStats($"  Chunk #{chunkNum}: De-duplicated {offsets.Length:N0} lines(s), {chunkData.Length / oneMbAsDouble:N1}MB in {sw.Elapsed.TotalMilliseconds:N1}ms. {uniques.Count:N0} line(s) remain, {offsets.Length - uniques.Count:N0} duplicates removed.");
-            return result;
-        }
         private (SlabIndex[] uniques, SlabIndex[] duplicates) DeDupe(int chunkNum, SlabArray data, SlabIndex[] offsets, IEqualityComparer<SlabIndex> comparer)
         {
             var sw = Stopwatch.StartNew();
@@ -1574,36 +1439,6 @@ Help for 'merge" verb:
         }
 
         private long WriteToFile(IndexedFileData data, FileStream output, IndexedFileData duplicates, FileStream duplicateOutput)
-        {
-            long linesWritten = 0L;
-
-            // Write unique lines.
-            var chunkData = data.Chunk;
-            var offsets = data.LineOffsets;
-            for (int i = 0; i < offsets.Length; i++)
-            {
-                var current = offsets[i];
-                output.Write(chunkData, current.Offset, current.Length);
-                output.WriteByte(Constants.NewLineAsByte);
-                linesWritten++;
-            }
-
-            // Write duplicate lines, if any.
-            if (_Conf.SaveDuplicates && duplicates != null && duplicateOutput != null)
-            {
-                chunkData = duplicates.Chunk;
-                offsets = duplicates.LineOffsets;
-                for (int i = 0; i < offsets.Length; i++)
-                {
-                    var current = offsets[i];
-                    duplicateOutput.Write(chunkData, current.Offset, current.Length);
-                    duplicateOutput.WriteByte(Constants.NewLineAsByte);
-                }
-
-            }
-            return linesWritten;
-        }
-        private long WriteToFile(IndexedFileData2 data, FileStream output, IndexedFileData2 duplicates, FileStream duplicateOutput)
         {
             long linesWritten = 0L;
 

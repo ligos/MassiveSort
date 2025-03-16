@@ -6,34 +6,17 @@ using System.Threading.Tasks;
 
 namespace MurrayGrant.MassiveSort
 {
-    public sealed class IndexedFileData : IDisposable
-    {
-        public byte[] Chunk;
-        public OffsetAndLength[] LineOffsets;
-
-        public IndexedFileData(byte[] chunk, OffsetAndLength[] offsets)
-        {
-            this.Chunk = chunk;
-            this.LineOffsets = offsets;
-        }
-
-        public void Dispose()
-        {
-            this.Chunk = null;
-            this.LineOffsets = null;
-        }
-
-        public override string ToString()
-        {
-            return String.Format("{0:N0} lines, {1:N1} MB", LineOffsets.Length, Chunk.Length / Constants.OneMbAsDouble);
-        }
-    }
-
-    public record class IndexedFileData2(SlabArray Data, SlabIndex[] LineIndex)
+    public sealed record class IndexedFileData(SlabArray Data, SlabIndex[] LineIndex) : IDisposable
     {
         public override string ToString()
         {
             return String.Format("{0:N0} lines, {1:N1} MB", LineIndex.Length, Data.Length / Constants.OneMbAsDouble);
+        }
+
+        public void Dispose()
+        {
+            this.Data.Dispose();
+            // Perhaps in future: this.LineIndex.Dispose();
         }
     }
 }
