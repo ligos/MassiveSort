@@ -9,9 +9,7 @@ namespace MurrayGrant.MassiveSort
     public sealed record class IndexedFileData(SlabArray Data, SlabIndex[] LineIndex) : IDisposable
     {
         public override string ToString()
-        {
-            return String.Format("{0:N0} lines, {1:N1} MB", LineIndex.Length, Data.Length / Constants.OneMbAsDouble);
-        }
+            => $"{LineIndex.Length:N0} lines, {Data.Length / Constants.OneMbAsDouble}MB";
 
         public void Dispose()
         {
