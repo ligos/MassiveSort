@@ -456,6 +456,7 @@ Help for 'merge" verb:
 
         private StreamWriter _StatsFile;
         private readonly MemoryPool<byte> _MemoryPool = MemoryPool<byte>.Shared;
+        private readonly ArrayPool<SlabIndex> _IndexArrayPool = ArrayPool<SlabIndex>.Create();
 
         public MergeMany(MergeConf conf)
         {
@@ -1518,21 +1519,23 @@ Help for 'merge" verb:
                 return;
 
             // During the phase 1 read (splitting / sharding), the max memory usage is:
-            var estForSplitPerWorker = (_Conf.ReadBufferSize * 3) + (257 * _Conf.TempFileBufferSize);      // 257 is the number of files open - 256 for a byte of sharding, plus one empty shard.
+            var estForSplitCommon = (257 * _Conf.TempFileBufferSize);       // 257 is the number of files open - 256 for a byte of sharding, plus one empty shard.
+            var estForSplitPerWorker = (_Conf.LineBufferSize * 4);          // Read buffer, plus whitespace buffer, plus 2x for $HEX buffer
             var estForSortPerWorker = _Conf.OutputBufferSize        // Output file buffer
                                     + (_Conf.SaveDuplicates ? _Conf.OutputBufferSize : 0)       // Output buffer when saving duplicates.
                                     + _Conf.MaxSortSize             // Sorting buffer
-                                    + (_Conf.MaxSortSize / 9 * System.Runtime.InteropServices.Marshal.SizeOf(typeof(OffsetAndLength)))    // Index into sort buffer. 9 is a conservative guess at the average line length.
-                                    + (_Conf.MaxSortSize / 9 * System.Runtime.InteropServices.Marshal.SizeOf(typeof(OffsetAndLength)))    // De-Duplication array. 9 is a conservative guess at the average line length.
-                                    + (_Conf.MaxSortSize / 9 * System.Runtime.InteropServices.Marshal.SizeOf(typeof(OffsetAndLength)))    // Additional sorting buffers / stack. 9 is a conservative guess at the average line length.
+                                    + (_Conf.MaxSortSize / 9 * System.Runtime.InteropServices.Marshal.SizeOf(typeof(SlabIndex)))    // Index into sort buffer. 9 is a conservative guess at the average line length.
+                                    + (_Conf.MaxSortSize / 9 * System.Runtime.InteropServices.Marshal.SizeOf(typeof(SlabIndex)))    // De-Duplication array. 9 is a conservative guess at the average line length.
+                                    + (_Conf.MaxSortSize / 9 * System.Runtime.InteropServices.Marshal.SizeOf(typeof(SlabIndex)))    // Additional sorting buffers / stack. 9 is a conservative guess at the average line length.
                                     + (10 * 1024 * 1024);           // TPL / Parallel overhead (eg: additional thread, TPL buffering and marshalling).
             Console.WriteLine("Estimated Memory Usage:");
             Console.WriteLine("  General Overhead: ~20-30MB");
+            Console.WriteLine("  Split Phase (common): {0:N1}MB", estForSplitCommon / oneMbAsDouble);
             Console.WriteLine("  Split Phase (per worker): {0:N1}MB", estForSplitPerWorker / oneMbAsDouble);
-            Console.WriteLine("  Split Phase for {1} worker(s): {0:N1}MB", (estForSplitPerWorker * _Conf.SplitWorkers) / oneMbAsDouble, _Conf.SplitWorkers);
+            Console.WriteLine("  Split Phase for {1} worker(s): {0:N1}MB", (estForSplitCommon + (estForSplitPerWorker * _Conf.SplitWorkers)) / oneMbAsDouble, _Conf.SplitWorkers);
             Console.WriteLine("  Sort Phase (per worker): {0:N1}MB", estForSortPerWorker / oneMbAsDouble);
             Console.WriteLine("  Sort Phase for {1} worker(s): {0:N1}MB", ((long)estForSortPerWorker * _Conf.SortWorkers) / oneMbAsDouble, _Conf.SortWorkers);
-            Console.WriteLine("  Sort Phase for {1} outstanding chunks: {0:N1}MB", ((long)estForSortPerWorker * (_Conf.SortWorkers + _Conf.MaxOutstandingSortedChunks)) / oneMbAsDouble, _Conf.SortWorkers + _Conf.MaxOutstandingSortedChunks);
+            Console.WriteLine("  Sort Phase for {1} outstanding chunks (and peak memory usage): {0:N1}MB", ((long)estForSortPerWorker * (_Conf.SortWorkers + _Conf.MaxOutstandingSortedChunks)) / oneMbAsDouble, _Conf.SortWorkers + _Conf.MaxOutstandingSortedChunks);
             Console.WriteLine("Note on memory usage:");
             Console.WriteLine("  .NET uses garbage collection; you may see higher memory use for short times.");
             Console.WriteLine("  Consider using --aggressive-memory-collection if you are running out of RAM.");
@@ -1546,15 +1549,19 @@ Help for 'merge" verb:
             {
                 Console.WriteLine("Configuration:");
                 Console.WriteLine("  Max Sort Size: " + _Conf.MaxSortSize.ToByteSizedString());
+                Console.WriteLine("  Slab Size: " + _Conf.SlabSize.ToByteSizedString());
                 Console.WriteLine("  Read File Buffer Size: " + _Conf.ReadBufferSize.ToByteSizedString());
                 Console.WriteLine("  Line Buffer Size: " + _Conf.LineBufferSize.ToByteSizedString());
                 Console.WriteLine("  Temp File Buffer Size: " + _Conf.TempFileBufferSize.ToByteSizedString());
                 Console.WriteLine("  Output File Buffer Size: " + _Conf.OutputBufferSize.ToByteSizedString());
+                Console.WriteLine("  Max Outstanding Chunks: " + _Conf.MaxOutstandingSortedChunks);
+                Console.WriteLine("  Aggressive Memory Collection: " + _Conf.AggressiveMemoryCollection);
+                Console.WriteLine();
                 Console.WriteLine("  Split Workers: " + _Conf.SplitWorkers);
                 Console.WriteLine("  Sort Workers: " + _Conf.SortWorkers);
                 Console.WriteLine("  IO Workers: " + _Conf.IOWorkers);
                 Console.WriteLine("  Temp Folder: " + _Conf.TempFolder);
-                Console.WriteLine("  Max Outstanding Chunks: " + _Conf.MaxOutstandingSortedChunks);
+                Console.WriteLine();
                 Console.WriteLine("  Sort By: " + _Conf.SortOrder);
                 Console.WriteLine("  Sort Algorithm: " + _Conf.SortAlgorithm);
                 Console.WriteLine("  Split Count: " + _Conf.SplitCount);
