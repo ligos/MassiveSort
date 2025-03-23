@@ -25,6 +25,9 @@ using System.Diagnostics;
 using CommandLine;
 using MurrayGrant.MassiveSort.Readers;
 using System.Buffers;
+using System.Management;
+using System.Globalization;
+using System.Runtime.InteropServices;
 
 namespace MurrayGrant.MassiveSort.Actions
 {
@@ -571,10 +574,15 @@ Help for 'merge" verb:
                     this.WriteStats("Splitting stopped. Following files remain larger than {0}:", _Conf.MaxSortSize.ToByteSizedString());
                     foreach (var f in filesLargerThanSortSize)
                         this.WriteStats("  {0}: {1}", f.Name, f.Length.ToByteSizedString(2));
+                    
+                    // Even with forcing large sort, we refuse to sort anything larger than physical RAM.
+                    var physicalMemory = GetPhysicalMemory();
+                    if (physicalMemory != null && filesLargerThanSortSize.Any(f => f.Length > physicalMemory))
+                        throw new ApplicationException($"Cannot sort as at least one file is larger than available physical RAM. Try increasing --split-count or --max-sort-size. Largest file: {filesLargerThanSortSize.Max(f => f.Length).ToByteSizedString()}, physical RAM: {physicalMemory.Value.ToByteSizedString()}.");
                     break;
                 }
                 else if (shardSize > _Conf.SplitCount && !_Conf.ForceLargeSort)
-                    throw new ApplicationException($"Splitting stopped after {shardSize-1} rounds and was unable to reduce all shards to less than {_Conf.MaxSortSize.ToByteSizedString()}. This indicates a large number of simiar or duplicate lines. Try increasing --split-count or --max-sort-size to process these files, if you know lines are mostly not duplicates. If you know most lines ARE duplicates, set --split-count low (eg: 2), and enable --force-large-sort (you may need to decrease --sort-workers to avoid running out of memory).");
+                    throw new ApplicationException($"Splitting stopped after {shardSize-1} rounds and was unable to reduce all shards to less than {_Conf.MaxSortSize.ToByteSizedString()}. This indicates a large number of simiar or duplicate lines. If you know there are not many duplicates, try increasing --split-count or --max-sort-size to process these files. If you know most lines ARE duplicates, set --split-count low (eg: 2), and enable --force-large-sort (you may need to decrease --sort-workers to avoid running out of memory).");
 
                 _Progress.Report(new BasicProgress(String.Format("Splitting {0:N0} file(s) (round {1})...", filesLargerThanSortSize.Count(), shardSize), true));
                 this.WriteStats("Splitting {0:N0} file(s) (round {1})...", filesLargerThanSortSize.Count(), shardSize);
@@ -1021,7 +1029,8 @@ Help for 'merge" verb:
                         var taskKey = new Object();
                         this.WriteStats("Chunk #{0}: Starting parallel sort thread.", c.chunkNum);
 
-                        _Progress.Report(new TaskProgress(String.Format("Sorting chunk {0:N0} ({1} - {2})...", c.chunkNum, c.files.First().Name, c.files.Last().Name), false, taskKey));
+                        var chunkSize = c.files.Sum(f => f.Length);
+                        _Progress.Report(new TaskProgress(String.Format("Sorting chunk {0:N0} ({1} - {2}; {3})...", c.chunkNum, c.files.First().Name, c.files.Last().Name, chunkSize.ToByteSizedString()), false, taskKey));
                         this.WriteStats("  Chunk #{0}: Sorting with {3:N0} files ({1} - {2}: {4:N1}MB, {5:N0} lines)...", c.chunkNum, c.files.First().Name, c.files.Last().Name, c.files.Count(), c.files.Sum(x => x.Length) / oneMbAsDouble, c.files.Sum(x => x.Lines));
 
                         // Read the files for the chunk into an array for sorting.
@@ -1585,6 +1594,31 @@ Help for 'merge" verb:
                 Console.WriteLine("Use the 'cleantemp' verb to remove them.");
                 Console.WriteLine();
             }
+        }
+
+        private long? GetPhysicalMemory()
+        {
+            if (CrashDumper.IsWindowsLikeEnvironment())
+            {
+                Debug.Assert(RuntimeInformation.IsOSPlatform(OSPlatform.Windows));
+                using (var osInfo = new ManagementObjectSearcher("SELECT * FROM Win32_OperatingSystem"))
+                using (var item = osInfo.Get().Cast<ManagementBaseObject>().First())
+                {
+                    return Convert.ToInt64(item["TotalVisibleMemorySize"]) * 1024L;
+                }
+            }
+            else if (File.Exists("/proc/meminfo"))
+            {
+                var memInfo = File.ReadAllLines("/proc/meminfo");
+                var totalLine = memInfo.FirstOrDefault(l => l.StartsWith("MemTotal:", StringComparison.OrdinalIgnoreCase));
+                if (string.IsNullOrEmpty(totalLine))
+                    return null;
+                var totalString = new string(totalLine.Where(char.IsAsciiDigit).ToArray());
+                if (!long.TryParse(totalString, CultureInfo.InvariantCulture, out var result))
+                    return null;
+                return result;
+            }
+            return null;
         }
     }
 }
