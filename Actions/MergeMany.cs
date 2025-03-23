@@ -150,8 +150,6 @@ Help for 'merge" verb:
 --max-outstanding-sorted-chunks
                    Number of chunks to buffer in memory when writing
                    Default: 2, major contributor to memory usage
---aggressive-memory-collection 
-                   Does a full garbage collection after each file processed
 """;
         }
 
@@ -524,8 +522,6 @@ Help for 'merge" verb:
             // Stage 1: split / shard files into smaller chunks.
             var toSort = SplitFiles(filesToProcess);
             if (token.IsCancellationRequested) return;
-            GC.Collect(GC.MaxGeneration, GCCollectionMode.Aggressive, true, true);
-
 
             // Stage 2: sort and merge the files.
             SortFiles(toSort);
@@ -578,7 +574,7 @@ Help for 'merge" verb:
                     break;
                 }
                 else if (shardSize > _Conf.SplitCount && !_Conf.ForceLargeSort)
-                    throw new ApplicationException($"Splitting stopped after {shardSize-1} rounds and was unable to reduce all shards to less than {_Conf.MaxSortSize.ToByteSizedString()}. This indicates a large number of simiar or duplicate lines. Try increasing --split-count or --max-sort-size to process these files. Or enable --force-large-sort to try sorting anyway. You may need to decrease --sort-workers to avoid running out of memory.");
+                    throw new ApplicationException($"Splitting stopped after {shardSize-1} rounds and was unable to reduce all shards to less than {_Conf.MaxSortSize.ToByteSizedString()}. This indicates a large number of simiar or duplicate lines. Try increasing --split-count or --max-sort-size to process these files, if you know lines are mostly not duplicates. If you know most lines ARE duplicates, set --split-count low (eg: 2), and enable --force-large-sort (you may need to decrease --sort-workers to avoid running out of memory).");
 
                 _Progress.Report(new BasicProgress(String.Format("Splitting {0:N0} file(s) (round {1})...", filesLargerThanSortSize.Count(), shardSize), true));
                 this.WriteStats("Splitting {0:N0} file(s) (round {1})...", filesLargerThanSortSize.Count(), shardSize);
@@ -636,6 +632,7 @@ Help for 'merge" verb:
                 var taskKey = new object();
                 this.FlushFiles(shardFiles, null, 0L, result, taskKey);
             }
+            GC.Collect(GC.MaxGeneration, GCCollectionMode.Aggressive, true, true);
 
             return result;
         }
@@ -671,6 +668,7 @@ Help for 'merge" verb:
                         // Flush files.
                         this.FlushFiles(shardFiles, f.FullName, lineCounts.Last(), result, taskKey);
                     }
+                    GC.Collect(GC.MaxGeneration, GCCollectionMode.Aggressive, true, true);
                 });
         }
 
@@ -1087,6 +1085,7 @@ Help for 'merge" verb:
                         _Progress.Report(new TaskProgress(" Written.", true, ch.taskKey));
                         var chTime = ch.readTime + ch.sortTime + ch.deDupTime + writeSw.Elapsed + memoryCleanSw.Elapsed;
                         var memInfo = GC.GetGCMemoryInfo();
+                        currentprocess.Refresh();
                         var processBytes = currentprocess.WorkingSet64;
                         this.WriteStats($"Chunk #{ch.chNum} completed! Processed in {chTime.TotalSeconds:N2} sec. Read {ch.linesRead:N0} lines in {ch.readTime.TotalMilliseconds:N1}ms, sorted in {ch.sortTime.TotalMilliseconds:N1}ms, {ch.linesRead - linesWritten:N0} duplicates removed in {ch.deDupTime.TotalMilliseconds:N1}ms, wrote {linesWritten:N0} lines in {writeSw.Elapsed.TotalMilliseconds:N1}ms, memory clean up in {memoryCleanSw.Elapsed.TotalMilliseconds:N1}ms. Process working set {processBytes / oneMbAsDouble:N2}MB, managed heap {memInfo.HeapSizeBytes / oneMbAsDouble:N2}MB, committed heap {memInfo.TotalCommittedBytes / oneMbAsDouble:N2}MB.");
                     }
@@ -1527,9 +1526,6 @@ Help for 'merge" verb:
             Console.WriteLine("  Sort Phase (per worker): {0:N1}MB", estForSortPerWorker / oneMbAsDouble);
             Console.WriteLine("  Sort Phase for {1} worker(s): {0:N1}MB", ((long)estForSortPerWorker * _Conf.SortWorkers) / oneMbAsDouble, _Conf.SortWorkers);
             Console.WriteLine("  Sort Phase for {1} outstanding chunks (and peak memory usage): {0:N1}MB", ((long)estForSortPerWorker * (_Conf.SortWorkers + _Conf.MaxOutstandingSortedChunks)) / oneMbAsDouble, _Conf.SortWorkers + _Conf.MaxOutstandingSortedChunks);
-            Console.WriteLine("Note on memory usage:");
-            Console.WriteLine("  .NET uses garbage collection; you may see higher memory use for short times.");
-            Console.WriteLine("  Consider using --aggressive-memory-collection if you are running out of RAM.");
             Console.WriteLine();
         }
 
