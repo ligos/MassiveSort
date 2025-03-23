@@ -48,7 +48,6 @@ namespace MurrayGrant.MassiveSort.Actions
 
             this.LeaveDuplicates = false;
             this.SaveDuplicates = false;
-            this.AggressiveMemoryCollection = false;
             this.SaveStats = false;
             this.SplitWorkers = Helpers.PhysicalCoreCount();
             this.SortWorkers = Helpers.PhysicalCoreCount();
@@ -190,12 +189,6 @@ Help for 'merge" verb:
         /// </summary>
         [Option("leave-duplicates")]
         public bool LeaveDuplicates { get; set; }
-
-        /// <summary>
-        /// If true, does a full garbage collection after each split and sort. Defaults to false.
-        /// </summary>
-        [Option("aggressive-memory-collection")]
-        public bool AggressiveMemoryCollection { get; set; }
 
         /// <summary>
         /// If true, writes stats to a parallel files to the OutputFile. Defaults to false.
@@ -531,6 +524,7 @@ Help for 'merge" verb:
             // Stage 1: split / shard files into smaller chunks.
             var toSort = SplitFiles(filesToProcess);
             if (token.IsCancellationRequested) return;
+            GC.Collect(GC.MaxGeneration, GCCollectionMode.Aggressive, true, true);
 
 
             // Stage 2: sort and merge the files.
@@ -643,9 +637,6 @@ Help for 'merge" verb:
                 this.FlushFiles(shardFiles, null, 0L, result, taskKey);
             }
 
-            if (_Conf.AggressiveMemoryCollection)
-                GC.Collect();
-
             return result;
         }
         private void DoSubLevelSplit(IEnumerable<FileInfo> files, int shardSize, IDictionary<string, FileResult> result)
@@ -680,9 +671,6 @@ Help for 'merge" verb:
                         // Flush files.
                         this.FlushFiles(shardFiles, f.FullName, lineCounts.Last(), result, taskKey);
                     }
-
-                    if (_Conf.AggressiveMemoryCollection)
-                        GC.Collect();
                 });
         }
 
@@ -1017,6 +1005,8 @@ Help for 'merge" verb:
             long totalLinesRead = 0;
             var duplicatePath = _Conf.OutputFile + ".duplicates";
 
+            var currentprocess = Process.GetCurrentProcess();
+
             var allSw = Stopwatch.StartNew();
             var flushSw = new Stopwatch();
             TimeSpan schedulerOverheadTime;
@@ -1091,13 +1081,14 @@ Help for 'merge" verb:
                         var memoryCleanSw = Stopwatch.StartNew();
                         ch.uniques.Dispose();
                         ch.duplicates?.Dispose();
-                        if (_Conf.AggressiveMemoryCollection)
-                            GC.Collect();
+                        GC.Collect(GC.MaxGeneration, GCCollectionMode.Aggressive, true, true);
                         memoryCleanSw.Stop();
 
                         _Progress.Report(new TaskProgress(" Written.", true, ch.taskKey));
                         var chTime = ch.readTime + ch.sortTime + ch.deDupTime + writeSw.Elapsed + memoryCleanSw.Elapsed;
-                        this.WriteStats($"Chunk #{ch.chNum} completed! Processed in {chTime.TotalSeconds:N2} sec. Read {ch.linesRead:N0} lines in {ch.readTime.TotalMilliseconds:N1}ms, sorted in {ch.sortTime.TotalMilliseconds:N1}ms, {ch.linesRead - linesWritten:N0} duplicates removed in {ch.deDupTime.TotalMilliseconds:N1}ms, wrote {linesWritten:N0} lines in {writeSw.Elapsed.TotalMilliseconds:N1}ms, memory clean up in {memoryCleanSw.Elapsed.TotalMilliseconds:N1}ms.");
+                        var memInfo = GC.GetGCMemoryInfo();
+                        var processBytes = currentprocess.WorkingSet64;
+                        this.WriteStats($"Chunk #{ch.chNum} completed! Processed in {chTime.TotalSeconds:N2} sec. Read {ch.linesRead:N0} lines in {ch.readTime.TotalMilliseconds:N1}ms, sorted in {ch.sortTime.TotalMilliseconds:N1}ms, {ch.linesRead - linesWritten:N0} duplicates removed in {ch.deDupTime.TotalMilliseconds:N1}ms, wrote {linesWritten:N0} lines in {writeSw.Elapsed.TotalMilliseconds:N1}ms, memory clean up in {memoryCleanSw.Elapsed.TotalMilliseconds:N1}ms. Process working set {processBytes / oneMbAsDouble:N2}MB, managed heap {memInfo.HeapSizeBytes / oneMbAsDouble:N2}MB, committed heap {memInfo.TotalCommittedBytes / oneMbAsDouble:N2}MB.");
                     }
                 ).Result;
 
@@ -1555,7 +1546,6 @@ Help for 'merge" verb:
                 Console.WriteLine("  Temp File Buffer Size: " + _Conf.TempFileBufferSize.ToByteSizedString());
                 Console.WriteLine("  Output File Buffer Size: " + _Conf.OutputBufferSize.ToByteSizedString());
                 Console.WriteLine("  Max Outstanding Chunks: " + _Conf.MaxOutstandingSortedChunks);
-                Console.WriteLine("  Aggressive Memory Collection: " + _Conf.AggressiveMemoryCollection);
                 Console.WriteLine();
                 Console.WriteLine("  Split Workers: " + _Conf.SplitWorkers);
                 Console.WriteLine("  Sort Workers: " + _Conf.SortWorkers);
