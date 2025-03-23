@@ -1616,7 +1616,7 @@ Help for 'merge" verb:
                 var totalString = new string(totalLine.Where(char.IsAsciiDigit).ToArray());
                 if (!long.TryParse(totalString, CultureInfo.InvariantCulture, out var result))
                     return null;
-                return result;
+                return result * 1024L;
             }
             return null;
         }

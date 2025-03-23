@@ -238,7 +238,7 @@ namespace MurrayGrant.MassiveSort
             // https://unix.stackexchange.com/questions/33450/checking-if-hyperthreading-is-enabled-or-not
             var lines = File.ReadAllLines("/proc/cpuinfo", Encoding.UTF8).Where(l => !String.IsNullOrEmpty(l));
             var cpuCount = lines.Count(l => l.Contains("processor", StringComparison.OrdinalIgnoreCase));
-            var hyperthreadingEnabled = lines.Any(l => l.Contains("flags") && l.Contains("ht"));
+            var hyperthreadingEnabled = lines.Any(l => l.Contains("flags") && l.Contains(" ht "));
             if (hyperthreadingEnabled)
                 return cpuCount / 2;
             else
