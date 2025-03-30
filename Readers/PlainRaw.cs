@@ -22,6 +22,7 @@ namespace MurrayGrant.MassiveSort.Readers
         public long LinesRead { get; private set; }
         public long ExtraSeeks { get; private set; }
         public long BuffersSkipped { get; private set; }
+        public long LinesSkipped { get; private set; }
 
         public PlainRaw(CancellationToken cancelToken, int readBufferSize = 64 * 1024)
         {
@@ -44,10 +45,11 @@ namespace MurrayGrant.MassiveSort.Readers
             long linesRead = 0;
             long extraSeeks = 0;
             long buffersSkipped = 0;
+            long linesSkipped = 0;
 
             int bytesInBuffer = 0;
             bool emptyStringFound = false;
-
+            bool isReadingLongLine = false;
 
             // Split the file into chunks.
             using (var stream = new FileStream(fullPath, FileMode.Open, FileAccess.Read, FileShare.Read, _ReadBufferSize))
@@ -60,14 +62,15 @@ namespace MurrayGrant.MassiveSort.Readers
                 while ((bytesInBuffer = ReadLineBuffer(stream, buffer.Span, endOffset)) > 0)
                 {
                     if (_CancelToken.IsCancellationRequested) break;
-                    buffersRead++;
+                    ++buffersRead;
                     int idx = 0;
                     OffsetAndLength ol;
 
                     // Ensure an empty string is written if present in the buffer.
                     if (!emptyStringFound && BufferContainsEmptyString(buffer.Span))
                     {
-                        linesRead++;
+                        emptyStringFound = true;
+                        ++linesRead;
                         yield return Memory<byte>.Empty;
                     }
 
@@ -77,13 +80,22 @@ namespace MurrayGrant.MassiveSort.Readers
                         // PERF: about 20% of CPU time is spent in NextWord().
                         ol = NextWord(buffer.Span, idx);
 
-                        if (ol.Length >= 0 && ol.Offset >= 0)
+                        if (ol.Length >= 0 && ol.Offset >= 0 && !isReadingLongLine)
                         {
                             // The offset and length are valid, yield to consumer.
                             ReadOnlyMemory<byte> result = buffer.Slice(ol.Offset, ol.Length);
-                            linesRead++;
+                            ++linesRead;
                             yield return result;
 
+                            idx = ol.Offset + ol.Length + 1;       // Assume at least one new line after the word.
+                        }
+                        else if (ol.Length >= 0 && ol.Offset >= 0 && isReadingLongLine)
+                        {
+                            // Reached the end of a long line.
+                            // Don't return anything, but keep reading additional lines.
+                            ++linesRead;
+                            ++linesSkipped;
+                            isReadingLongLine = false;
                             idx = ol.Offset + ol.Length + 1;       // Assume at least one new line after the word.
                         }
                         else
@@ -93,7 +105,8 @@ namespace MurrayGrant.MassiveSort.Readers
                             if (idx == 0)
                             {
                                 // Skip this line, because it did not fit entirely in the buffer.
-                                buffersSkipped++;
+                                ++buffersSkipped;
+                                isReadingLongLine = true;
                             }
                             else if (ol.Offset == -1)
                             {
@@ -103,7 +116,7 @@ namespace MurrayGrant.MassiveSort.Readers
                             {
                                 // The buffer splits the word: seek backwards in the file slightly so the next buffer is at the start of the word.
                                 stream.Position = stream.Position - (buffer.Length - ol.Offset);
-                                extraSeeks++;
+                                ++extraSeeks;
                             }
                         }
                     } while (ol.Length >= 0 && ol.Offset >= 0);      // End of the buffer: read the next one.
@@ -112,6 +125,9 @@ namespace MurrayGrant.MassiveSort.Readers
 
             this.BuffersRead = buffersRead;
             this.LinesRead = linesRead;
+            this.ExtraSeeks = extraSeeks;
+            this.BuffersSkipped = buffersSkipped;
+            this.LinesSkipped = linesSkipped;
         }
 
 

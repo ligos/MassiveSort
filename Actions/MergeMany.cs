@@ -44,8 +44,8 @@ namespace MurrayGrant.MassiveSort.Actions
 
             this.MaxSortSize = 64 * 1024 * 1024;            // Largest size of files to sort in one chunk.
             this.SlabSize = 4 * 1024 * 1024;                // Size of each slab in the SlabArray.
-            this.ReadBufferSize = 64 * 1024;                // Buffer size to use when reading files.
-            this.LineBufferSize = 64 * 1024;                // Buffer size to use when reading lines (also max line length).
+            this.ReadBufferSize = 128 * 1024;               // Buffer size to use when reading files.
+            this.LineBufferSize = 128 * 1024;               // Buffer size to use when reading lines (also max line length).
             this.TempFileBufferSize = 128 * 1024;           // Buffer size to use when writing temp files.
             this.OutputBufferSize = 256 * 1024;             // Buffer size to use for the final merged output file.
 
@@ -140,10 +140,10 @@ Help for 'merge" verb:
 
     Buffers / Memory
 --line-buffer-size Buffer size for reading lines
-                   Default: 64KB
+                   Default: 128KB
 --read-file-buffer-size 
                    Buffer size for input file
-                   Default: 64KB
+                   Default: 128KB
 --temp-file-buffer-size 
                    Buffer size for writing temp files
                    Default: 128KB
@@ -393,8 +393,8 @@ Help for 'merge" verb:
 
             if (LineBufferSize < 1024)
                 result.AppendLine("'line-buffer-size' must be at least 1KB.");
-            if (LineBufferSize > 1024 * 1024 * 16)
-                result.AppendLine("'line-buffer-size' must be less than 16MB.");
+            if (LineBufferSize > 1024 * 128)
+                result.AppendLine("'line-buffer-size' must be less than 128KB.");
 
             if (ReadBufferSize < 1024)
                 result.AppendLine("'read-file-buffer-size' must be at least 1KB.");
@@ -612,7 +612,6 @@ Help for 'merge" verb:
         }
         private IDictionary<string, FileResult> DoTopLevelSplit(IEnumerable<FileInfo> files)
         {
-            var buffer = new byte[_Conf.LineBufferSize];
             var chunks = new PlainRaw(_CancelToken).ConvertFilesToSplitChunks(files, _Conf.LargeFileThresholdSize, _Conf.LargeFileChunkSize);
             var shardFiles = CreateShardFiles("");
             var lineCounts = new long[shardFiles.Length];
@@ -808,10 +807,13 @@ Help for 'merge" verb:
                         ShardWordToFileWithoutLock(toWrite, shardSize, shardFiles, lineCounts);
                 }
                 sw.Stop();
-                _Progress.Report(new TaskProgress(" Done.", true, taskKey));
+                if (reader.LinesSkipped == 0)
+                    _Progress.Report(new TaskProgress(" Done.", true, taskKey));
+                else
+                    _Progress.Report(new TaskProgress($" Done. WARNING, {reader.LinesSkipped} line(s) were skipped as they are longer than {_Conf.LineBufferSize.ToByteSizedString()}.", true, taskKey));
 
                 this.WriteStats("File '{0}': {1:N0} lines processed in {2:N1}ms, {3:N1} lines / sec, {4:N1} MB / sec.", ch.NameForProgress, reader.LinesRead, sw.Elapsed.TotalMilliseconds, reader.LinesRead / sw.Elapsed.TotalSeconds, (ch.Length / oneMbAsDouble) / sw.Elapsed.TotalSeconds);
-                this.WriteStats("File '{0}': {1:N0} line buffers read, {2:N0} line buffers skipped because lines were too long, {3:N0} additional seeks due to buffer alignment.", ch.NameForProgress, reader.BuffersRead, reader.BuffersSkipped, reader.ExtraSeeks);
+                this.WriteStats("File '{0}': {1:N0} line buffers read, {2:N0} lines skipped, {3:N0} line buffers skipped because lines were too long, {4:N0} additional seeks due to buffer alignment.", ch.NameForProgress, reader.BuffersRead, reader.LinesSkipped, reader.BuffersSkipped, reader.ExtraSeeks);
                 if (trimWhitespace)
                     this.WriteStats("File '{0}': {1:N0} lines had whitespace trimmed.", ch.NameForProgress, linesTrimmed);
                 if (stripWhitespace)
