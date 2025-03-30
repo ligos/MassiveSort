@@ -400,6 +400,7 @@ Help for 'merge" verb:
             if (LineBufferSize < 1024)
                 result.AppendLine("'line-buffer-size' must be at least 1KB.");
             if (LineBufferSize > 1024 * 128)
+                // Note, 128kB is the max based on SlabIndex.Length (17 bits)
                 result.AppendLine("'line-buffer-size' must be less than 128KB.");
 
             if (ReadBufferSize < 1024)
@@ -618,7 +619,7 @@ Help for 'merge" verb:
         }
         private IDictionary<string, FileResult> DoTopLevelSplit(IEnumerable<FileInfo> files)
         {
-            var chunks = new PlainRaw(_CancelToken).ConvertFilesToSplitChunks(files, _Conf.LargeFileThresholdSize, _Conf.LargeFileChunkSize);
+            var chunks = new PlainRaw(_CancelToken).ConvertFilesToSplitChunks(files, _Conf.LargeFileThresholdSize, _Conf.LargeFileChunkSize, _Conf.LineBufferSize);
             var shardFiles = CreateShardFiles("");
             var lineCounts = new long[shardFiles.Length];
             var result = new Dictionary<string, FileResult>(shardFiles.Length);

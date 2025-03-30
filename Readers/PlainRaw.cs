@@ -131,7 +131,7 @@ namespace MurrayGrant.MassiveSort.Readers
         }
 
 
-        public IList<FileChunk> ConvertFilesToSplitChunks(IEnumerable<FileInfo> files, long thresholdSize, long chunkSize)
+        public IList<FileChunk> ConvertFilesToSplitChunks(IEnumerable<FileInfo> files, long thresholdSize, long chunkSize, int lineBufferSize)
         {
             if (thresholdSize <= 0L)
                 throw new ArgumentOutOfRangeException("thresholdSize", thresholdSize, "Threshold must be greater than zero.");
@@ -139,6 +139,8 @@ namespace MurrayGrant.MassiveSort.Readers
                 throw new ArgumentOutOfRangeException("chunkSize", chunkSize, "Chunk Size must be greater than zero.");
             if (thresholdSize <= chunkSize)
                 throw new ArgumentOutOfRangeException("thresholdSize", thresholdSize, "Threshold must be greater than Chunk Size.");
+            if (lineBufferSize <= 0L)
+                throw new ArgumentOutOfRangeException("lineBufferSize", lineBufferSize, "Line Buffer must be greater than zero.");
 
             // Sort be size, descending, to process larger chunks first.
             // To try to keep more cores busy for longer and not end up with a single large chunk dominating split time.
@@ -168,10 +170,12 @@ namespace MurrayGrant.MassiveSort.Readers
                             fs.Seek(chunkSize, SeekOrigin.Current);
 
                             // Find a newline character to end the chunk on.
+                            int lineLength = 0;  // If it turns out cannot find a newline in a line buffer length, we will give up.
                             var b = (byte)fs.ReadByte();
-                            while (!(b == Constants.NewLineAsByte || b == Constants.NewLineAsByteAlt) && fs.Position != 1)
+                            while (!(b == Constants.NewLineAsByte || b == Constants.NewLineAsByteAlt) && fs.Position != 1 && lineLength < lineBufferSize)
                             {
                                 fs.Seek(-2, SeekOrigin.Current);
+                                lineLength += 2;
                                 b = (byte)fs.ReadByte();
                             }
                             long endOffset = fs.Position;

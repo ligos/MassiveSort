@@ -183,7 +183,7 @@ TODO
         {
             _Progress.Report(new BasicProgress(String.Format("Analysing {0:N0} file(s) totaling {1}.", files.Count(), files.Sum(x => x.Length).ToByteSizedString()), true));
 
-            var chunks = new PlainRaw(_CancelToken).ConvertFilesToSplitChunks(files, _Conf.LargeFileThresholdSize, _Conf.LargeFileChunkSize);
+            var chunks = new PlainRaw(_CancelToken).ConvertFilesToSplitChunks(files, _Conf.LargeFileThresholdSize, _Conf.LargeFileChunkSize, _Conf.LineBufferSize);
             // TODO: parallel.
 
             // TODO: pull this into a loop so that once a file is fully processed it can be written.
