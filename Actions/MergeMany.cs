@@ -68,6 +68,7 @@ namespace MurrayGrant.MassiveSort.Actions
             this.Whitespace = WhitespaceOptions.NoChange;   // Make no changes to whitespace.
             this.WhitespaceChars = Constants.DefaultWhitespace.ToArray();     // Whitespace characters.
             this.ConvertToDollarHex = false;                // Do not convert to $HEX[...] format by default.
+            this.KeepNulls = false;
         }
 
         public static string GetUsageText()
@@ -99,6 +100,8 @@ Help for 'merge" verb:
                    - Strip: removes all whitespace
 --whitespace-chars Byte(s) considered whitespace
                    Default: 0x09, 0x0b, 0x20
+--keep-nulls       Keep null (0x00) characters in lines.
+                   Default: null characters are removed.
 
 
     Sorting
@@ -301,6 +304,9 @@ Help for 'merge" verb:
         [Option("whitespace-chars")]
         public IEnumerable<byte> WhitespaceChars { get; set; }
         internal ReadOnlyMemory<byte> WhitespaceCharsAsBytes { get; set; }
+
+        [Option("keep-nulls")]
+        public bool KeepNulls { get; set; }
 
         /// <summary>
         /// If true, will convert all lines outside printable ASCII range to the $HEX[...] format. False by default.
@@ -763,15 +769,18 @@ Help for 'merge" verb:
             long linesTrimmed = 0;
             long linesStripped = 0;
             long linesConvertedToDollarHex = 0;
+            long linesWithNulls = 0;
 
-            bool trimWhitespace = (_Conf.Whitespace == MergeConf.WhitespaceOptions.Trim);
-            bool stripWhitespace = (_Conf.Whitespace == MergeConf.WhitespaceOptions.Strip);
+            bool trimWhitespace = _Conf.Whitespace == MergeConf.WhitespaceOptions.Trim;
+            bool stripWhitespace = _Conf.Whitespace == MergeConf.WhitespaceOptions.Strip;
             bool convertToDollarHex = _Conf.ConvertToDollarHex;
+            bool stripNulls = !_Conf.KeepNulls;
 
             // The allocation size allow us to convert a full line buffer to $HEX[...] format.
             var sizeForDollarHex = _Conf.LineBufferSize * 2 + Constants.DollarHexPrefix.Length + 1 /* ']' */ + 1 /* '\n' */;
             using (var buffer = _MemoryPool.Rent(_Conf.LineBufferSize))
             using (var whitespaceBuffer = _MemoryPool.Rent(_Conf.LineBufferSize))
+            using (var nullBuffer = _MemoryPool.Rent(_Conf.LineBufferSize))
             using (var dollarHexBuffer = _MemoryPool.Rent(sizeForDollarHex))
             {
                 _Progress.Report(new TaskProgress(String.Format("Splitting '{0}'...", ch.NameForProgress), false, taskKey));
@@ -798,6 +807,9 @@ Help for 'merge" verb:
                     if (stripWhitespace)
                         linesStripped += this.StripWhitespace(toWrite, whitespaceBuffer.Memory.Span, _Conf.WhitespaceCharsAsBytes.Span, out toWrite);
 
+                    // Stripping nulls may require a copy to the alternate buffer.
+                    if (stripNulls)
+                        linesWithNulls += this.StripNulls(toWrite, nullBuffer.Memory.Span, out toWrite);
 
                     // Write the word to the shard file.
                     // PERF: about 45% of CPU time is spent in FileStream.Write(), contained in ShardWordToFile().
@@ -814,6 +826,8 @@ Help for 'merge" verb:
 
                 this.WriteStats("File '{0}': {1:N0} lines processed in {2:N1}ms, {3:N1} lines / sec, {4:N1} MB / sec.", ch.NameForProgress, reader.LinesRead, sw.Elapsed.TotalMilliseconds, reader.LinesRead / sw.Elapsed.TotalSeconds, (ch.Length / oneMbAsDouble) / sw.Elapsed.TotalSeconds);
                 this.WriteStats("File '{0}': {1:N0} line buffers read, {2:N0} lines skipped, {3:N0} line buffers skipped because lines were too long, {4:N0} additional seeks due to buffer alignment.", ch.NameForProgress, reader.BuffersRead, reader.LinesSkipped, reader.BuffersSkipped, reader.ExtraSeeks);
+                if (stripNulls)
+                    this.WriteStats("File '{0}': {1:N0} lines had nulls stripped.", ch.NameForProgress, linesWithNulls);
                 if (trimWhitespace)
                     this.WriteStats("File '{0}': {1:N0} lines had whitespace trimmed.", ch.NameForProgress, linesTrimmed);
                 if (stripWhitespace)
@@ -949,6 +963,38 @@ Help for 'merge" verb:
                 for (int j = 0; j < whitespaceChars.Length; j++)
                     isWhitespace = isWhitespace | (wordBytes[i] == whitespaceChars[j]);
                 if (!isWhitespace)
+                {
+                    secondBuffer[oBufIdx] = wordBytes[i];
+                    oBufIdx++;
+                }
+            }
+            result = secondBuffer[..oBufIdx];
+            return 1L;
+        }
+        private long StripNulls(ReadOnlySpan<byte> wordBytes, Span<byte> secondBuffer, out ReadOnlySpan<byte> result)
+        {
+            // Search for nulls.
+            bool hasNull = false;
+            for (int i = 0; i < wordBytes.Length; i++)
+            {
+                if (wordBytes[i] == 0)
+                {
+                    hasNull = true;
+                    break;
+                }
+            }
+            if (!hasNull)
+            {
+                // No nulls found: return the original span.
+                result = wordBytes;
+                return 0L;
+            }
+
+            // Make a copy into the other buffer, but skip any whitespace.
+            int oBufIdx = 0;
+            for (int i = 0; i < wordBytes.Length; i++)
+            {
+                if (wordBytes[i] != 0)
                 {
                     secondBuffer[oBufIdx] = wordBytes[i];
                     oBufIdx++;
@@ -1521,7 +1567,7 @@ Help for 'merge" verb:
 
             // During the phase 1 read (splitting / sharding), the max memory usage is:
             var estForSplitCommon = (257 * _Conf.TempFileBufferSize);       // 257 is the number of files open - 256 for a byte of sharding, plus one empty shard.
-            var estForSplitPerWorker = (_Conf.LineBufferSize * 4);          // Read buffer, plus whitespace buffer, plus 2x for $HEX buffer
+            var estForSplitPerWorker = (_Conf.LineBufferSize * 5);          // Read buffer, plus whitespace buffer, plus null buffer, plus 2x for $HEX buffer
             var estForSortPerWorker = _Conf.OutputBufferSize        // Output file buffer
                                     + (_Conf.SaveDuplicates ? _Conf.OutputBufferSize : 0)       // Output buffer when saving duplicates.
                                     + _Conf.MaxSortSize             // Sorting buffer
@@ -1567,6 +1613,7 @@ Help for 'merge" verb:
                 Console.WriteLine("  Save Stats: " + _Conf.SaveStats);
                 Console.WriteLine("  Whitespace: " + _Conf.Whitespace);
                 Console.WriteLine("  Convert to $HEX[]: " + _Conf.ConvertToDollarHex);
+                Console.WriteLine("  Keep Nulls: " + _Conf.KeepNulls);
                 Console.WriteLine();
             }
         }
