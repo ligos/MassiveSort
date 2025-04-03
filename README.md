@@ -6,12 +6,31 @@ Lets your sort and merge really, really big text files.
 
 ## Getting Started ##
 
-* Make sure you have .NET 4.8 / Mono 3.2+ installed
+* Make sure you have [.NET 8.0 installed](https://dotnet.microsoft.com/en-us/download/dotnet/8.0): _.NET Runtime_ is sufficent.
 * [Download the latest release](https://github.com/ligos/MassiveSort/releases)
 * Unzip to a folder of your choice
 * `MassiveSort.exe merge -o sortedFile.txt -i unsortedFile.txt`
 
 ## Recent Changes ##
+
+### 0.2.0 ###
+
+* Update to use [.NET 8.0](https://dotnet.microsoft.com/en-us/download/dotnet/8.0).
+  * Tested on Windows and Debian platforms. Other Linux distributions supported by dotnet should also work.
+* Increase `--max-sort-size` to support sorting over 2GB of data in RAM.
+  * Physical RAM is the limit to sort size. Tested on 96GB machine.
+  * Increasing `--slab-size` allows up to 63TB to be sorted in RAM (in theory).
+* Maximum sortable line size is now 128kB (131,072) bytes. Longer lines are skipped.
+* Null bytes (ASCII `NUL` or `0x00`) are removed by default.
+  * Use `--keep-nulls` to keep null bytes.
+* Improved support for files with similar starting lines.
+  * Splitting phase is limited to 16 iterations to avoid long path failures on Windows.
+  * Use `--split-count` and --force-large-sort` to control this behaviour.
+* Improved memory usage via dotnet `MemoryPool`; MassiveSort should not allocate excessive memory.
+  * The `--aggressive-memory-collection` option is always active; command line option removed.  
+* Improve logging via `--debug` and `--save-stats` options.
+* Update to latest version of 3rd party libraries.
+* Fixed several bugs discovered when implementing all the above!
 
 ### 0.1.6 ###
 
