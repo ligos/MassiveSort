@@ -25,7 +25,7 @@ Lets your sort and merge really, really big text files.
   * Use `--keep-nulls` to keep null bytes.
 * Improved support for files with similar starting lines.
   * Splitting phase is limited to 16 iterations to avoid long path failures on Windows.
-  * Use `--split-count` and --force-large-sort` to control this behaviour.
+  * Use `--split-count` and `--force-large-sort` to control this behaviour.
 * Improved memory usage via dotnet `MemoryPool`; MassiveSort should not allocate excessive memory.
   * The `--aggressive-memory-collection` option is always active; command line option removed.  
 * Improve logging via `--debug` and `--save-stats` options.
