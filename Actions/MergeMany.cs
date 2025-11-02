@@ -1628,6 +1628,7 @@ Help for 'merge" verb:
                 Console.WriteLine("  Whitespace: " + _Conf.Whitespace);
                 Console.WriteLine("  Convert to $HEX[]: " + _Conf.ConvertToDollarHex);
                 Console.WriteLine("  Keep Nulls: " + _Conf.KeepNulls);
+                Console.WriteLine("  Keep Blanks: " + _Conf.KeepBlankLines);
                 Console.WriteLine();
             }
         }
