@@ -28,6 +28,7 @@ using System.Buffers;
 using System.Management;
 using System.Globalization;
 using System.Runtime.InteropServices;
+using System.Text.RegularExpressions;
 
 namespace MurrayGrant.MassiveSort.Actions
 {
@@ -103,6 +104,15 @@ Help for 'merge" verb:
 --keep-nulls       Keep null (0x00) characters in lines.
                    Default: null characters are removed.
 --keep-blanks      Keep blank lines (default: remove blank lines)
+--include-by-regex A regular expression which must match to keep lines
+--exclude-by-regex A regular expression which must NOT match to keep lines
+                   Note: only one of include-by-regex and exclude-by-regex
+                   may be used. 
+                   Regex is applied AFTER trimming / stripping whitespace,
+                   AND conversion to $HEX[].
+                   No character set conversion is done (eg: UTF8 or Unicode); 
+                   regex is applied against raw bytes.
+                   By default, there is no filtering.
 
 
     Sorting
@@ -312,6 +322,12 @@ Help for 'merge" verb:
         [Option("keep-blanks")]
         public bool KeepBlankLines { get; set; }
 
+        [Option("include-by-regex")]
+        public string IncludeRegex { get; set; }
+
+        [Option("exclude-by-regex")]
+        public string ExcludeRegex { get; set; }
+
         /// <summary>
         /// If true, will convert all lines outside printable ASCII range to the $HEX[...] format. False by default.
         /// https://hashcat.net/trac/ticket/148
@@ -429,6 +445,31 @@ Help for 'merge" verb:
             if (LargeFileChunkSize > LargeFileThresholdSize)
                 result.AppendLine("'large-chunk' cannot be larger than 'large-threshold'.");
 
+            if (!String.IsNullOrEmpty(IncludeRegex) && !String.IsNullOrEmpty(ExcludeRegex))
+                result.AppendLine("'include-by-regex' and 'exclude-by-regex' cannot both be used; choose one or the other!");
+            if (!String.IsNullOrEmpty(IncludeRegex))
+            {
+                try
+                {
+                    _ = new Regex(IncludeRegex);
+                } catch (ArgumentException ex)
+                {
+                    result.AppendLine("'include-by-regex' is not valid: " + ex.Message);
+                }
+            }
+            if (!String.IsNullOrEmpty(ExcludeRegex))
+            {
+                try
+                {
+                    _ = new Regex(ExcludeRegex);
+                }
+                catch (ArgumentException ex)
+                {
+                    result.AppendLine("'exclude-by-regex' is not valid: " + ex.Message);
+                }
+            }
+
+
             return result.ToString();
         }
         public bool IsValid { get { return String.IsNullOrEmpty(GetValidationMessage()); } }
@@ -461,11 +502,19 @@ Help for 'merge" verb:
 
         private StreamWriter _StatsFile;
         private readonly MemoryPool<byte> _MemoryPool = MemoryPool<byte>.Shared;
+        private readonly MemoryPool<char> _CharPool = MemoryPool<char>.Shared;
         private readonly ArrayPool<SlabIndex> _IndexArrayPool = ArrayPool<SlabIndex>.Create();
+
+        private readonly Regex _IncludeRegex;
+        private readonly Regex _ExcludeRegex;
 
         public MergeMany(MergeConf conf)
         {
             _Conf = conf;
+            if (!String.IsNullOrEmpty(conf.IncludeRegex))
+                _IncludeRegex = new Regex(conf.IncludeRegex, RegexOptions.Compiled | RegexOptions.Singleline);
+            if (!String.IsNullOrEmpty(conf.ExcludeRegex))
+                _ExcludeRegex = new Regex(conf.ExcludeRegex, RegexOptions.Compiled | RegexOptions.Singleline);
         }
 
         public void Dispose()
@@ -776,12 +825,14 @@ Help for 'merge" verb:
             long linesConvertedToDollarHex = 0;
             long linesWithNulls = 0;
             long blankLines = 0;
+            long linesFilteredByRegex = 0;
 
             bool trimWhitespace = _Conf.Whitespace == MergeConf.WhitespaceOptions.Trim;
             bool stripWhitespace = _Conf.Whitespace == MergeConf.WhitespaceOptions.Strip;
             bool convertToDollarHex = _Conf.ConvertToDollarHex;
             bool stripNulls = !_Conf.KeepNulls;
             bool keepBlanks = _Conf.KeepBlankLines;
+            bool filterByRegex = _IncludeRegex is not null || _ExcludeRegex is not null;
 
             // The allocation size allow us to convert a full line buffer to $HEX[...] format.
             var sizeForDollarHex = _Conf.LineBufferSize * 2 + Constants.DollarHexPrefix.Length + 1 /* ']' */ + 1 /* '\n' */;
@@ -789,6 +840,7 @@ Help for 'merge" verb:
             using (var whitespaceBuffer = _MemoryPool.Rent(_Conf.LineBufferSize))
             using (var nullBuffer = _MemoryPool.Rent(_Conf.LineBufferSize))
             using (var dollarHexBuffer = _MemoryPool.Rent(sizeForDollarHex))
+            using (var charBuffer = filterByRegex ? _CharPool.Rent(sizeForDollarHex) : null)
             {
                 _Progress.Report(new TaskProgress(String.Format("Splitting '{0}'...", ch.NameForProgress), false, taskKey));
                 var sw = Stopwatch.StartNew();
@@ -824,6 +876,25 @@ Help for 'merge" verb:
                     if (!keepBlanks && toWrite.Length == 0)
                         continue;
 
+                    // Regex filtering must be done using Chars, so we need a copy.
+                    if (filterByRegex)
+                    {
+                        var charSpan = charBuffer.Memory.Span[..toWrite.Length];
+                        for (int i = 0; i < toWrite.Length; i++)
+                            charSpan[i] = (Char)toWrite[i];
+    
+                        if (_IncludeRegex is not null && !_IncludeRegex.IsMatch(charSpan))
+                        {
+                            linesFilteredByRegex++;
+                            continue;
+                        }
+                        if (_ExcludeRegex is not null && _ExcludeRegex.IsMatch(charSpan))
+                        {
+                            linesFilteredByRegex++;
+                            continue;
+                        }
+                    }
+
                     // Write the word to the shard file.
                     // PERF: about 45% of CPU time is spent in FileStream.Write(), contained in ShardWordToFile().
                     if (lockStreams)
@@ -847,6 +918,8 @@ Help for 'merge" verb:
                     this.WriteStats("File '{0}': {1:N0} lines had whitespace stripped.", ch.NameForProgress, linesStripped);
                 if (convertToDollarHex)
                     this.WriteStats("File '{0}': {1:N0} lines were converted to $HEX[].", ch.NameForProgress, linesConvertedToDollarHex);
+                if (filterByRegex)
+                    this.WriteStats("File '{0}': {1:N0} lines were filtered by regex.", ch.NameForProgress, linesFilteredByRegex);
                 this.WriteStats("File '{0}': {1:N0} lines were blank. Blank lines were {2}.", ch.NameForProgress, blankLines, keepBlanks ? "kept" : "removed");
 
                 return reader.LinesRead;
@@ -1629,6 +1702,8 @@ Help for 'merge" verb:
                 Console.WriteLine("  Convert to $HEX[]: " + _Conf.ConvertToDollarHex);
                 Console.WriteLine("  Keep Nulls: " + _Conf.KeepNulls);
                 Console.WriteLine("  Keep Blanks: " + _Conf.KeepBlankLines);
+                Console.WriteLine("  Include Regex: " + _Conf.IncludeRegex);
+                Console.WriteLine("  Exclude Regex: " + _Conf.ExcludeRegex);
                 Console.WriteLine();
             }
         }
