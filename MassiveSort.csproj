@@ -13,9 +13,9 @@
     <Description>Sorts massive amounts of data</Description>
     <Company>Murray Grant</Company>
     <Product>MassiveSort</Product>
-    <Copyright>Copyright © Murray Grant 2015</Copyright>
+    <Copyright>Copyright © Murray Grant 2015 - 2025</Copyright>
 
-    <Version>0.2.0</Version>
+    <Version>0.3.0</Version>
   </PropertyGroup>
 
   <ItemGroup>
