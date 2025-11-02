@@ -102,6 +102,7 @@ Help for 'merge" verb:
                    Default: 0x09, 0x0b, 0x20
 --keep-nulls       Keep null (0x00) characters in lines.
                    Default: null characters are removed.
+--keep-blanks      Keep blank lines (default: remove blank lines)
 
 
     Sorting
@@ -307,6 +308,9 @@ Help for 'merge" verb:
 
         [Option("keep-nulls")]
         public bool KeepNulls { get; set; }
+
+        [Option("keep-blanks")]
+        public bool KeepBlankLines { get; set; }
 
         /// <summary>
         /// If true, will convert all lines outside printable ASCII range to the $HEX[...] format. False by default.
@@ -771,11 +775,13 @@ Help for 'merge" verb:
             long linesStripped = 0;
             long linesConvertedToDollarHex = 0;
             long linesWithNulls = 0;
+            long blankLines = 0;
 
             bool trimWhitespace = _Conf.Whitespace == MergeConf.WhitespaceOptions.Trim;
             bool stripWhitespace = _Conf.Whitespace == MergeConf.WhitespaceOptions.Strip;
             bool convertToDollarHex = _Conf.ConvertToDollarHex;
             bool stripNulls = !_Conf.KeepNulls;
+            bool keepBlanks = _Conf.KeepBlankLines;
 
             // The allocation size allow us to convert a full line buffer to $HEX[...] format.
             var sizeForDollarHex = _Conf.LineBufferSize * 2 + Constants.DollarHexPrefix.Length + 1 /* ']' */ + 1 /* '\n' */;
@@ -812,6 +818,12 @@ Help for 'merge" verb:
                     if (stripNulls)
                         linesWithNulls += this.StripNulls(toWrite, nullBuffer.Memory.Span, out toWrite);
 
+                    // Blank lines are processed at the end (after whitespace might be removed).
+                    if (toWrite.Length == 0)
+                        blankLines += 1;
+                    if (!keepBlanks && toWrite.Length == 0)
+                        continue;
+
                     // Write the word to the shard file.
                     // PERF: about 45% of CPU time is spent in FileStream.Write(), contained in ShardWordToFile().
                     if (lockStreams)
@@ -835,6 +847,7 @@ Help for 'merge" verb:
                     this.WriteStats("File '{0}': {1:N0} lines had whitespace stripped.", ch.NameForProgress, linesStripped);
                 if (convertToDollarHex)
                     this.WriteStats("File '{0}': {1:N0} lines were converted to $HEX[].", ch.NameForProgress, linesConvertedToDollarHex);
+                this.WriteStats("File '{0}': {1:N0} lines were blank. Blank lines were {2}.", ch.NameForProgress, blankLines, keepBlanks ? "kept" : "removed");
 
                 return reader.LinesRead;
             }
